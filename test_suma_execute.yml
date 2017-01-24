@@ -1,0 +1,75 @@
+- hosts: all
+  gather_facts: True
+  tasks:
+
+  ###################################################################
+  ### Excecute : Action + RqType + FilterML
+  ###################################################################
+  # PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS
+
+  - name: "SUMA module: Excecute with Action + RqType + FilterML"
+    suma:
+      task: execute
+      field:
+        Action: Preview
+        RqType: Latest
+        FilterML: 7100-02
+    ignore_errors: True
+    register: test_suma_out
+  - debug: var=test_suma_out.debug_out
+
+
+  ###################################################################
+  ### Excecute : Action + RqType + FilterML + DisplayName
+  ###################################################################
+  # PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS
+
+  - name: "SUMA module: Excecute with Action + RqType + FilterML + DisplayName"
+    suma:
+      task: execute
+      field:
+        Action: Preview
+        RqType: Latest
+        FilterML: 7100-02
+        DisplayName: '"Testing Suma DisplayName"'
+    ignore_errors: True
+    register: test_suma_out
+  - debug: var=test_suma_out.debug_out
+
+
+  ###################################################################
+  ### Excecute : Action + RqType + RqName + FilterML + DisplayName
+  ###################################################################
+  #  0500-017 Do not specify RqName with RqType=Latest.
+  #  0500-049 Task is not valid.'
+
+  - name: "SUMA module: Excecute with Action + RqType + RqName + FilterML + DisplayName"
+    suma:
+      task: execute
+      field:
+        Action: Preview
+        RqType: Latest
+        RqName: 7100-02-02-1316
+        FilterML: 7100-02
+        DisplayName: '"Testing Suma DisplayName"'
+    ignore_errors: True
+    register: test_suma_out
+  - debug: var=test_suma_out.debug_out
+
+
+  ###################################################################
+  ### Excecute : Action + RqType + FilterML + DLTarget
+  ###################################################################
+  # 0500-049 Task is not valid  0500-049 Task is not valid
+
+  - name: "SUMA module: Excecute with Action + RqType + FilterML + DLTarget"
+    suma:
+      task: execute
+      field:
+        Action: Preview
+        RqType: Latest
+        FilterML: 7100-02
+        DLTarget: /sumatest/oslevel/latest/7100-02-08-1316-lpp_source
+    ignore_errors: True
+    register: test_suma_out
+  - debug: var=test_suma_out.debug_out
