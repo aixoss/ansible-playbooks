@@ -1,0 +1,52 @@
+- hosts: all
+  gather_facts: True
+  tasks:
+
+    ####################################
+    ### List global config
+    ####################################
+
+    - name: "SUMA module: List global config"
+      suma:
+        task: list
+        list_id: global_config
+      register: test_suma_out
+
+    - debug: var=test_suma_out.debug_out
+
+    ###################################
+    ## List default task
+    ###################################
+
+    - name: "SUMA module: List default task"
+      suma:
+        task: list
+        list_id: default_task
+      register: test_suma_out
+
+    - debug: var=test_suma_out.debug_out
+
+    ####################################
+    ### List all tasks
+    ####################################
+
+    - name: "SUMA module: List all tasks"
+      suma:
+        task: list
+        list_id: list_task
+      register: test_suma_out
+
+    - debug: var=test_suma_out.debug_out
+
+    ####################################
+    ### List task with TaskID 1
+    ####################################
+
+    - name: "SUMA module: List task with TaskID 1"
+      suma:
+        task: list
+        list_id: list_task
+        task_id: 1
+      register: test_suma_out
+
+    - debug: var=test_suma_out.debug_out
