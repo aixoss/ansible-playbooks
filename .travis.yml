@@ -10,6 +10,4 @@ install:
 
 # command to run tests
 script:
-  - ansible-playbook -i test/inventory test/main.yml --syntax-check
-  - cd test && make
-
+  - ansible-playbook test_suma_execute.yml --syntax-check
