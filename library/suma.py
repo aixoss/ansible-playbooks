@@ -25,7 +25,6 @@
 DOCUMENTATION = '''
 ---
 module: suma
-author: "Cyril Bouhallier"
 version_added: "1.0.0"
 short_description: AIX suma command
 requirements: [ AIX ]
@@ -37,18 +36,23 @@ description:
 #       - A comma-separated list of FIELD to be used.
 #     required: false
 #     default: None
-#     version_added: "2.1"
 
 # Run SUMA using a specific FIELD
 # - suma:
-#     field: FilterDir,FilterML,MaxDLSize
+#     task: execute
+#     field:
+#       Action: preview
+#       RqType: TL
+#       RqName: 7100-02-02-1316
+#       FilterML: 7100-02
+#       DisplayName: '"Testing my SUMA module"'
 '''
 
 EXAMPLES = '''
 # To list SUMA tasks:
 - suma:
-    Task: List
-    Taskid: TaskID
+    task: List
+    taskid: TaskID
 
 # To list or edit the default SUMA task:
 - suma:
@@ -80,6 +84,7 @@ def main():
     module = AnsibleModule(
         argument_spec = dict(
             task    = dict(choices=['create', 'edit', 'execute', 'list', 'schedule', 'unschedule', 'delete',], type='str'),
+            # TODO
             task_id = dict(required=False, type='int'),
             list_id = dict(required=False, choices=['global_config','default_task','list_task'], type='str'),
             field   = dict(required=False, type='dict'),
@@ -103,43 +108,41 @@ def main():
     ###########################################################################
 
     if task == 'execute':
-      if field:
 
-        ###########################################################################
-        # RqName field must be blank when RqType equals Latest.
-        ###########################################################################
+      ###########################################################################
+      # RqName field must be blank when RqType equals Latest.
+      ###########################################################################
 
-        if 'Rqtype' in field and 'RqName' in field and field['Rqtype'] == 'Latest':
+      # if 'Rqtype' in field and 'RqName' in field and field.get('Rqtype') == 'Latest':
+      if 'Rqtype' in field :
 
-            del field['RqName']
+        del field['RqName']
 
-            cmd = ''.join( ['-a %s=%s ' % (key, value) for (key, value) in field.items()] )
-            cmd = 'echo ' + cmd
+        cmd = ''.join( ['-a %s=%s ' % (key, value) for (key, value) in field.items()] )
+        cmd = 'echo ' + cmd
 
-            rc, stdout, stderr = module.run_command(cmd)
+        rc, stdout, stderr = module.run_command(cmd)
 
-            if rc == 0:
-              module.exit_json(
-               changed=False,
-               message='SUMA Execute task: {}'.format(cmd),
-               debug_out=stdout.split('\n'))
-            else:
-              module.fail_json(msg='SUMA Execute (RqName blank) returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
+        debug_dict = []
+        debug_dict.append('Dictionnary length: {}'.format(len(recipe)))
+        debug_dict.append('Dictionnary keys: {}'.format(recipe.keys()))
+        debug_dict.append('Dictionnary values: {}'.format(recipe.values()))
+        debug_dict.append('Command: {} '.format(cmd))
 
+        if rc == 0:
+          module.exit_json(
+            changed=False,
+            message='SUMA Execute task: {}'.format(cmd),
+            debug_out=stdout.split('\n'))
         else:
+          module.fail_json(msg='SUMA Execute (RqName blank) returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
 
-          cmd = ''.join( ['-a %s=%s ' % (key, value) for (key, value) in field.items()] )
-          cmd = '/usr/sbin/suma -x ' + cmd
-
-          rc, stdout, stderr = module.run_command(cmd)
-
-          if rc == 0:
-            module.exit_json(
-              changed=False,
-              message='SUMA Execute task: {}'.format(cmd),
-              debug_out=stdout.split('\n'))
-          else:
-            module.fail_json(msg='SUMA Execute returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
+          # module.exit_json(
+          #   changed=False,
+          #   debug_dict=debug_dict)
+          # module.exit_json(
+          #   changed=False,
+          #   debug_dict=stdout)
 
       ##############################
       ## Build DLTarget directory
@@ -162,6 +165,95 @@ def main():
             debug_out=stdout.split('\n'))
         else:
           module.fail_json(msg='SUMA Execute (DLT) returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
+
+      else:
+
+      # if 'style' in recipe:
+      #   debug_dict.append('Dictionnary Style = {}'.format(recipe.get('style')))
+
+
+        cmd = ''.join( ['-a %s=%s ' % (key, value) for (key, value) in field.items()] )
+        cmd = '/usr/sbin/suma -x ' + cmd
+
+        rc, stdout, stderr = module.run_command(cmd)
+
+        if rc == 0:
+          module.exit_json(
+            changed=False,
+            message='SUMA Execute task: {}'.format(cmd),
+            debug_out=stdout.split('\n'))
+        else:
+          msg = 'SUMA command: {} returned non-0 exit :{}'.format(cmd, stderr)
+          # module.fail_json(msg='SUMA Execute returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
+          module.fail_json(msg=msg)
+
+          # module.exit_json(
+          #   changed=False,
+          #   debug_dict=debug_dict)
+          # module.exit_json(
+          #   changed=False,
+          #   debug_dict=stdout)
+
+    ###########################################################################
+    # List List List List List List List List List List List List List List
+    ###########################################################################
+
+    elif task == 'list' and list_id == 'list_task':
+
+      # ===========================================
+      # List: Tasks or Tasks with TaskID
+      # ===========================================
+
+      if task_id:
+          cmd = '/usr/sbin/suma -l %s' % task_id
+          rc, stdout, stderr = module.run_command(cmd)
+          # ERROR: 0500-048 Task ID 1 was not found
+      else:
+          cmd = '/usr/sbin/suma -l'
+          rc, stdout, stderr = module.run_command(cmd)
+
+      if rc == 0:
+          module.exit_json(
+              changed=False,
+              message='SUMA task:{} with TaskID:{}'.format(task, task_id),
+              debug_out=stdout.split('\n'))
+      else:
+          msg = 'SUMA command: {} returned non-0 exit :{}'.format(cmd, stderr)
+          module.fail_json(msg=msg)
+
+    # ===========================================
+    # List: Global Config
+    # ===========================================
+
+    elif task == 'list' and list_id == 'global_config':
+
+      cmd = '/usr/sbin/suma -c'
+      rc, stdout, stderr = module.run_command(cmd)
+
+      if rc == 0:
+          module.exit_json(
+              changed=False,
+              message='SUMA task:{} with TaskID:{}'.format(task, task_id),
+              debug_out=stdout.split('\n'))
+      else:
+          module.fail_json(msg='SUMA command returned non-0 exit {}'.format(stderr))
+
+    # ===========================================
+    # List: Default task
+    # ===========================================
+
+    elif task == 'list' and list_id == 'default_task':
+
+      cmd = '/usr/sbin/suma -D'
+      rc, stdout, stderr = module.run_command(cmd)
+
+      if rc == 0:
+          module.exit_json(
+              changed=False,
+              message='SUMA task:{} with TaskID:{}'.format(task, task_id),
+              debug_out=stdout.split('\n'))
+      else:
+          module.fail_json(msg='SUMA command returned non-0 exit {}'.format(stderr))
 
     ###########################################################################
     # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
