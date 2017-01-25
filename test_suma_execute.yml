@@ -7,9 +7,9 @@
   ###################################################################
   # PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS
 
-  - name: "SUMA module: Excecute with Action + RqType + FilterML"
+  - name: "SUMA Excecute: Action + RqType + FilterML"
     suma:
-      task: execute
+      operation: execute
       field:
         Action: Preview
         RqType: Latest
@@ -24,9 +24,9 @@
   ###################################################################
   # PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS
 
-  - name: "SUMA module: Excecute with Action + RqType + FilterML + DisplayName"
+  - name: "SUMA Excecute : Action + RqType + FilterML + DisplayName"
     suma:
-      task: execute
+      operation: execute
       field:
         Action: Preview
         RqType: Latest
@@ -43,9 +43,9 @@
   #  0500-017 Do not specify RqName with RqType=Latest.
   #  0500-049 Task is not valid.'
 
-  - name: "SUMA module: Excecute with Action + RqType + RqName + FilterML + DisplayName"
+  - name: "SUMA Excecute : Action + RqType + RqName + FilterML + DisplayName"
     suma:
-      task: execute
+      operation: execute
       field:
         Action: Preview
         RqType: Latest
@@ -62,9 +62,9 @@
   ###################################################################
   # 0500-049 Task is not valid  0500-049 Task is not valid
 
-  - name: "SUMA module: Excecute with Action + RqType + FilterML + DLTarget"
+  - name: "SUMA Excecute : Action + RqType + FilterML + DLTarget"
     suma:
-      task: execute
+      operation: execute
       field:
         Action: Preview
         RqType: Latest
