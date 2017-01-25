@@ -39,7 +39,7 @@ description:
 
 # Run SUMA using a specific FIELD
 # - suma:
-#     task: execute
+#     operation: execute
 #     field:
 #       Action: preview
 #       RqType: TL
@@ -51,28 +51,9 @@ description:
 EXAMPLES = '''
 # To list SUMA tasks:
 - suma:
-    task: List
+    Operation: List
     taskid: TaskID
 
-# To list or edit the default SUMA task:
-- suma:
-    Task: [List, Edit]
-    Field: Value
-
-# To list or edit the SUMA global configuration settings:
-- suma:
-    Task: [List, Edit]
-    Field: Value
-
-# To unschedule a SUMA task:
-- suma:
-    Task: Unschedule
-    Field: TaskID
-
-# To delete a SUMA task:
-- suma:
-    Task: Delete
-    Field: TaskID
 '''
 
 # ===========================================
@@ -83,12 +64,11 @@ def main():
 
     module = AnsibleModule(
         argument_spec = dict(
-            task    = dict(choices=['create', 'edit', 'execute', 'list', 'schedule', 'unschedule', 'delete',], type='str'),
-            # TODO
-            task_id = dict(required=False, type='int'),
-            list_id = dict(required=False, choices=['global_config','default_task','list_task'], type='str'),
-            field   = dict(required=False, type='dict'),
-            repeats = dict(required=False, type='bool'),
+            operation = dict(choices=['create', 'edit', 'execute', 'list', 'schedule', 'unschedule', 'delete',], type='str'),
+            task_id   = dict(required=False, type='int'),
+            list_type = dict(required=False, choices=['global_config','default_task','list_task'], type='str'),
+            field     = dict(required=False, type='dict'),
+            repeats   = dict(required=False, type='bool'),
         ),
         supports_check_mode = True
     )
@@ -97,9 +77,9 @@ def main():
     # Get Module params
     # ===========================================
 
-    task    = module.params.get('task')
+    operation = module.params.get('operation')
     task_id = module.params.get('task_id')
-    list_id = module.params.get('list_id')
+    list_type = module.params.get('list_type')
     field = module.params.get('field')
     repeats = module.params.get('repeats')
 
@@ -107,7 +87,7 @@ def main():
     # Execute Execute Execute Execute Execute Execute
     ###########################################################################
 
-    if task == 'execute':
+    if operation == 'execute':
 
       ###########################################################################
       # RqName field must be blank when RqType equals Latest.
@@ -161,7 +141,7 @@ def main():
         if rc == 0:
           module.exit_json(
             changed=False,
-            message='SUMA Execute task: {}'.format(cmd),
+            message='SUMA Execute: {}'.format(cmd),
             debug_out=stdout.split('\n'))
         else:
           module.fail_json(msg='SUMA Execute (DLT) returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
@@ -180,7 +160,7 @@ def main():
         if rc == 0:
           module.exit_json(
             changed=False,
-            message='SUMA Execute task: {}'.format(cmd),
+            message='SUMA Execute: {}'.format(cmd),
             debug_out=stdout.split('\n'))
         else:
           msg = 'SUMA command: {} returned non-0 exit :{}'.format(cmd, stderr)
@@ -198,7 +178,7 @@ def main():
     # List List List List List List List List List List List List List List
     ###########################################################################
 
-    elif task == 'list' and list_id == 'list_task':
+    elif operation == 'list' and list_type == 'list_task':
 
       # ===========================================
       # List: Tasks or Tasks with TaskID
@@ -215,7 +195,7 @@ def main():
       if rc == 0:
           module.exit_json(
               changed=False,
-              message='SUMA task:{} with TaskID:{}'.format(task, task_id),
+              message='SUMA List: {} with TaskID:{}'.format(operation, task_id),
               debug_out=stdout.split('\n'))
       else:
           msg = 'SUMA command: {} returned non-0 exit :{}'.format(cmd, stderr)
@@ -225,7 +205,7 @@ def main():
     # List: Global Config
     # ===========================================
 
-    elif task == 'list' and list_id == 'global_config':
+    elif operation == 'list' and list_type == 'global_config':
 
       cmd = '/usr/sbin/suma -c'
       rc, stdout, stderr = module.run_command(cmd)
@@ -233,7 +213,7 @@ def main():
       if rc == 0:
           module.exit_json(
               changed=False,
-              message='SUMA task:{} with TaskID:{}'.format(task, task_id),
+              message='SUMA List:{} with TaskID:{}'.format(operation, task_id),
               debug_out=stdout.split('\n'))
       else:
           module.fail_json(msg='SUMA command returned non-0 exit {}'.format(stderr))
@@ -242,7 +222,7 @@ def main():
     # List: Default task
     # ===========================================
 
-    elif task == 'list' and list_id == 'default_task':
+    elif operation == 'list' and list_type == 'default_task':
 
       cmd = '/usr/sbin/suma -D'
       rc, stdout, stderr = module.run_command(cmd)
@@ -250,7 +230,7 @@ def main():
       if rc == 0:
           module.exit_json(
               changed=False,
-              message='SUMA task:{} with TaskID:{}'.format(task, task_id),
+              message='SUMA List:{} with TaskID:{}'.format(operation, task_id),
               debug_out=stdout.split('\n'))
       else:
           module.fail_json(msg='SUMA command returned non-0 exit {}'.format(stderr))
@@ -266,19 +246,19 @@ def main():
     # suma -c [ -a Field=Value ]...
 
     # ===========================================
-    # Unschedule: SUMA task
+    # Unschedule: SUMA operation
     # ===========================================
 
     # suma -u TaskID
 
     # ===========================================
-    # Delete: SUMA task
+    # Delete: SUMA operation
     # ===========================================
 
     # suma -d TaskID
 
     # ===========================================
-    # Schedule: SUMA task
+    # Schedule: SUMA operation
     # ===========================================
 
     # suma -s "30 2 15 * *" -a RqType=Latest -a DisplayName="Latest fixes - 15th Monthly"
