@@ -10,6 +10,8 @@ install:
 
 # command to run tests
 script:
+  - ansible-playbook test_suma_list.yml --syntax-check
+  - ansible-playbook test_suma_list.yml -vvv
   - ansible-playbook test_suma_execute.yml --syntax-check
   - ansible-playbook test_suma_execute.yml -vvv
-  
+
