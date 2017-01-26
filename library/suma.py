@@ -93,86 +93,22 @@ def main():
       # RqName field must be blank when RqType equals Latest.
       ###########################################################################
 
-      # if 'Rqtype' in field and 'RqName' in field and field.get('Rqtype') == 'Latest':
-      if 'Rqtype' in field :
+      if 'RqType' in field and 'RqName' in field and field.get('RqType') == 'Latest':
+        field.pop('RqName', None)
 
-        del field['RqName']
+      ###########################################################################
 
-        cmd = ''.join( ['-a %s=%s ' % (key, value) for (key, value) in field.items()] )
-        cmd = 'echo ' + cmd
+      cmd = ''.join( ["-a %s=%s " % (key, value) for (key, value) in field.items()] )
+      cmd = "/usr/sbin/suma -x " + cmd
+      rc, stdout, stderr = module.run_command(cmd)
 
-        rc, stdout, stderr = module.run_command(cmd)
-
-        debug_dict = []
-        debug_dict.append('Dictionnary length: {}'.format(len(recipe)))
-        debug_dict.append('Dictionnary keys: {}'.format(recipe.keys()))
-        debug_dict.append('Dictionnary values: {}'.format(recipe.values()))
-        debug_dict.append('Command: {} '.format(cmd))
-
-        if rc == 0:
-          module.exit_json(
-            changed=False,
-            message='SUMA Execute task: {}'.format(cmd),
-            debug_out=stdout.split('\n'))
-        else:
-          module.fail_json(msg='SUMA Execute (RqName blank) returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
-
-          # module.exit_json(
-          #   changed=False,
-          #   debug_dict=debug_dict)
-          # module.exit_json(
-          #   changed=False,
-          #   debug_dict=stdout)
-
-      ##############################
-      ## Build DLTarget directory
-      ##############################
-
-      elif 'DLTarget' in field:
-
-##        module.run_command('mkdir' % field.get('DLTarget'))
-
-        cmd = ''.join( ['-a %s=%s ' % (key, value) for (key, value) in field.items()] )
-        # cmd = '/usr/sbin/suma -x ' + cmd
-        cmd = 'echo ' + cmd
-
-        rc, stdout, stderr = module.run_command(cmd)
-
-        if rc == 0:
-          module.exit_json(
-            changed=False,
-            message='SUMA Execute: {}'.format(cmd),
-            debug_out=stdout.split('\n'))
-        else:
-          module.fail_json(msg='SUMA Execute (DLT) returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
-
+      if rc == 0:
+        module.exit_json(
+          changed=False,
+          message="SUMA Execute: {}".format(cmd),
+          debug_out=stdout.split('\n'))
       else:
-
-      # if 'style' in recipe:
-      #   debug_dict.append('Dictionnary Style = {}'.format(recipe.get('style')))
-
-
-        cmd = ''.join( ['-a %s=%s ' % (key, value) for (key, value) in field.items()] )
-        cmd = '/usr/sbin/suma -x ' + cmd
-
-        rc, stdout, stderr = module.run_command(cmd)
-
-        if rc == 0:
-          module.exit_json(
-            changed=False,
-            message='SUMA Execute: {}'.format(cmd),
-            debug_out=stdout.split('\n'))
-        else:
-          msg = 'SUMA command: {} returned non-0 exit :{}'.format(cmd, stderr)
-          # module.fail_json(msg='SUMA Execute returned non-0 exit - STDERR:{}'.format(stderr.split('\n')))
-          module.fail_json(msg=msg)
-
-          # module.exit_json(
-          #   changed=False,
-          #   debug_dict=debug_dict)
-          # module.exit_json(
-          #   changed=False,
-          #   debug_dict=stdout)
+        module.fail_json(msg="SUMA Execute: {} => Error :{}".format(cmd, stderr.split('\n')))
 
     ###########################################################################
     # List List List List List List List List List List List List List List
@@ -198,8 +134,7 @@ def main():
               message='SUMA List: {} with TaskID:{}'.format(operation, task_id),
               debug_out=stdout.split('\n'))
       else:
-          msg = 'SUMA command: {} returned non-0 exit :{}'.format(cmd, stderr)
-          module.fail_json(msg=msg)
+        module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
 
     # ===========================================
     # List: Global Config
@@ -207,16 +142,16 @@ def main():
 
     elif operation == 'list' and list_type == 'global_config':
 
-      cmd = '/usr/sbin/suma -c'
+      cmd = "/usr/sbin/suma -c"
       rc, stdout, stderr = module.run_command(cmd)
 
       if rc == 0:
           module.exit_json(
               changed=False,
-              message='SUMA List:{} with TaskID:{}'.format(operation, task_id),
+              message="SUMA List:{} with TaskID:{}".format(operation, task_id),
               debug_out=stdout.split('\n'))
       else:
-          module.fail_json(msg='SUMA command returned non-0 exit {}'.format(stderr))
+        module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
 
     # ===========================================
     # List: Default task
@@ -224,16 +159,16 @@ def main():
 
     elif operation == 'list' and list_type == 'default_task':
 
-      cmd = '/usr/sbin/suma -D'
+      cmd = "/usr/sbin/suma -D"
       rc, stdout, stderr = module.run_command(cmd)
 
       if rc == 0:
           module.exit_json(
               changed=False,
-              message='SUMA List:{} with TaskID:{}'.format(operation, task_id),
+              message="SUMA List:{} with TaskID:{}".format(operation, task_id),
               debug_out=stdout.split('\n'))
       else:
-          module.fail_json(msg='SUMA command returned non-0 exit {}'.format(stderr))
+        module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
 
     ###########################################################################
     # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
