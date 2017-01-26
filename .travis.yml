@@ -6,12 +6,13 @@ python:
 # command to install dependencies
 install:
   - pip install ansible
+  - pip install flake8
   - ansible --version
 
 # command to run tests
 script:
+  - flake8 . --max-line-length=120
   - ansible-playbook test_suma_list.yml --syntax-check
   - ansible-playbook test_suma_list.yml -vvv
   - ansible-playbook test_suma_execute.yml --syntax-check
   - ansible-playbook test_suma_execute.yml -vvv
-
