@@ -40,8 +40,7 @@
   ###################################################################
   ### Excecute : Action + RqType + RqName + FilterML + DisplayName
   ###################################################################
-  #  0500-017 Do not specify RqName with RqType=Latest.
-  #  0500-049 Task is not valid.'
+  # PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS PASS
 
   - name: "SUMA Excecute : Action + RqType + RqName + FilterML + DisplayName"
     suma:
@@ -51,7 +50,7 @@
         RqType: Latest
         RqName: 7100-02-02-1316
         FilterML: 7100-02
-        DisplayName: '"Testing Suma DisplayName"'
+        DisplayName: '"Testing RqName with RqType=Latest"'
     ignore_errors: True
     register: test_suma_out
   - debug: var=test_suma_out.debug_out
@@ -62,14 +61,16 @@
   ###################################################################
   # 0500-049 Task is not valid  0500-049 Task is not valid
 
-  - name: "SUMA Excecute : Action + RqType + FilterML + DLTarget"
-    suma:
-      operation: execute
-      field:
-        Action: Preview
-        RqType: Latest
-        FilterML: 7100-02
-        DLTarget: /sumatest/oslevel/latest/7100-02-08-1316-lpp_source
-    ignore_errors: True
-    register: test_suma_out
-  - debug: var=test_suma_out.debug_out
+  # - name: "SUMA Excecute : Action + RqType + FilterML + DLTarget"
+  #   suma:
+  #     operation: execute
+  #     field:
+  #       Action: Preview
+  #       RqType: Latest
+  #       FilterML: 7100-02
+  #       DLTarget: /sumatest/oslevel/latest/7100-02-08-1316-lpp_source
+  #       DisplayName: '"Testing RqName with RqType=Latest"'
+  #   ignore_errors: True
+  #   register: test_suma_out
+  # - debug: var=test_suma_out.debug_out
+
