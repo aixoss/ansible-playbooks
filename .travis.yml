@@ -11,7 +11,7 @@ install:
 
 # command to run tests
 script:
-  - flake8 --show-source --show-pep8 --max-line-length=120 --statistics --count -qq suma.py
+  - flake8 --show-source --max-line-length=120 --statistics --count -qq suma.py
   - ansible-playbook test_suma_list.yml --syntax-check
   - ansible-playbook test_suma_list.yml -vvv
   - ansible-playbook test_suma_execute.yml --syntax-check
