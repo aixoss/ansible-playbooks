@@ -29,7 +29,7 @@ version_added: "1.0.0"
 short_description: AIX suma command
 requirements: [ AIX ]
 description:
-    - Create a task to automate the dowload of AIX technology level and service packs from a fix server
+- Create a task to automate the dowload of AIX technology level and service packs from a fix server
 
 # Field:
 #     description:
@@ -51,26 +51,21 @@ description:
 EXAMPLES = '''
 # To list SUMA tasks:
 - suma:
-    Operation: List
-    taskid: TaskID
-
+Operation: List
+taskid: TaskID
 '''
 
-# ===========================================
-# Module code.
-#
 
 def main():
-
     module = AnsibleModule(
-        argument_spec = dict(
-            operation = dict(choices=['create', 'edit', 'execute', 'list', 'schedule', 'unschedule', 'delete',], type='str'),
-            task_id   = dict(required=False, type='int'),
-            list_type = dict(required=False, choices=['global_config','default_task','list_task'], type='str'),
-            field     = dict(required=False, type='dict'),
-            repeats   = dict(required=False, type='bool'),
+        argument_spec=dict(
+            operation=dict(choices=['create', 'edit', 'execute', 'list', 'schedule',
+                                    'unschedule', 'delete'], type='str'),
+            task_id=dict(required=False, type='int'),
+            list_type=dict(required=False, choices=['global_config', 'default_task', 'list_task'], type='str'),
+            field=dict(required=False, type='dict'),
         ),
-        supports_check_mode = True
+        supports_check_mode=True
     )
 
     # ===========================================
@@ -81,7 +76,6 @@ def main():
     task_id = module.params.get('task_id')
     list_type = module.params.get('list_type')
     field = module.params.get('field')
-    repeats = module.params.get('repeats')
 
     ###########################################################################
     # Execute Execute Execute Execute Execute Execute
@@ -89,52 +83,52 @@ def main():
 
     if operation == 'execute':
 
-      ###########################################################################
-      # RqName field must be blank when RqType equals Latest.
-      ###########################################################################
+        ###########################################################################
+        # RqName field must be blank when RqType equals Latest.
+        ###########################################################################
 
-      if 'RqType' in field and 'RqName' in field and field.get('RqType') == 'Latest':
-        field.pop('RqName', None)
+        if 'RqType' in field and 'RqName' in field and field.get('RqType') == 'Latest':
+            field.pop('RqName', None)
 
-      ###########################################################################
+        ###########################################################################
 
-      cmd = ''.join( ["-a %s=%s " % (key, value) for (key, value) in field.items()] )
-      cmd = "/usr/sbin/suma -x " + cmd
-      rc, stdout, stderr = module.run_command(cmd)
+        cmd = ''.join(["-a %s=%s " % (key, value) for (key, value) in field.items()])
+        cmd = "/usr/sbin/suma -x " + cmd
+        rc, stdout, stderr = module.run_command(cmd)
 
-      if rc == 0:
-        module.exit_json(
-          changed=False,
-          message="SUMA Execute: {}".format(cmd),
-          debug_out=stdout.split('\n'))
-      else:
-        module.fail_json(msg="SUMA Execute: {} => Error :{}".format(cmd, stderr.split('\n')))
+        if rc == 0:
+            module.exit_json(
+                changed=False,
+                message="SUMA Execute: {}".format(cmd),
+                debug_out=stdout.split('\n'))
+        else:
+            module.fail_json(msg="SUMA Execute: {} => Error :{}".format(cmd, stderr.split('\n')))
 
     ###########################################################################
     # List List List List List List List List List List List List List List
     ###########################################################################
 
+    # ===========================================
+    # List: Tasks or Tasks with TaskID
+    # ===========================================
+
     elif operation == 'list' and list_type == 'list_task':
 
-      # ===========================================
-      # List: Tasks or Tasks with TaskID
-      # ===========================================
+        if task_id:
+            cmd = '/usr/sbin/suma -l %s' % task_id
+            rc, stdout, stderr = module.run_command(cmd)
+            # ERROR: 0500-048 Task ID 1 was not found
+        else:
+            cmd = '/usr/sbin/suma -l'
+            rc, stdout, stderr = module.run_command(cmd)
 
-      if task_id:
-          cmd = '/usr/sbin/suma -l %s' % task_id
-          rc, stdout, stderr = module.run_command(cmd)
-          # ERROR: 0500-048 Task ID 1 was not found
-      else:
-          cmd = '/usr/sbin/suma -l'
-          rc, stdout, stderr = module.run_command(cmd)
-
-      if rc == 0:
-          module.exit_json(
-              changed=False,
-              message='SUMA List: {} with TaskID:{}'.format(operation, task_id),
-              debug_out=stdout.split('\n'))
-      else:
-        module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
+            if rc == 0:
+                module.exit_json(
+                    changed=False,
+                    message='SUMA List: {} with TaskID:{}'.format(operation, task_id),
+                    debug_out=stdout.split('\n'))
+            else:
+                module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
 
     # ===========================================
     # List: Global Config
@@ -142,16 +136,16 @@ def main():
 
     elif operation == 'list' and list_type == 'global_config':
 
-      cmd = "/usr/sbin/suma -c"
-      rc, stdout, stderr = module.run_command(cmd)
+        cmd = "/usr/sbin/suma -c"
+        rc, stdout, stderr = module.run_command(cmd)
 
-      if rc == 0:
-          module.exit_json(
-              changed=False,
-              message="SUMA List:{} with TaskID:{}".format(operation, task_id),
-              debug_out=stdout.split('\n'))
-      else:
-        module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
+        if rc == 0:
+            module.exit_json(
+                changed=False,
+                message="SUMA List:{} with TaskID:{}".format(operation, task_id),
+                debug_out=stdout.split('\n'))
+        else:
+            module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
 
     # ===========================================
     # List: Default task
@@ -159,16 +153,16 @@ def main():
 
     elif operation == 'list' and list_type == 'default_task':
 
-      cmd = "/usr/sbin/suma -D"
-      rc, stdout, stderr = module.run_command(cmd)
+        cmd = "/usr/sbin/suma -D"
+        rc, stdout, stderr = module.run_command(cmd)
 
-      if rc == 0:
-          module.exit_json(
-              changed=False,
-              message="SUMA List:{} with TaskID:{}".format(operation, task_id),
-              debug_out=stdout.split('\n'))
-      else:
-        module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
+        if rc == 0:
+            module.exit_json(
+                changed=False,
+                message="SUMA List:{} with TaskID:{}".format(operation, task_id),
+                debug_out=stdout.split('\n'))
+        else:
+            module.fail_json(msg="SUMA List: {} => Error :{}".format(cmd, stderr.split('\n')))
 
     ###########################################################################
     # TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO TODO
@@ -199,8 +193,10 @@ def main():
     # suma -s "30 2 15 * *" -a RqType=Latest -a DisplayName="Latest fixes - 15th Monthly"
 
 
-# Ansible module 'boilerplate'
+# import module snippets
 from ansible.module_utils.basic import *
 
+# invoke the module
+
 if __name__ == '__main__':
-      main()
+    main()
