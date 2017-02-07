@@ -59,9 +59,6 @@ def main():
 
     # TODO (CGB): Update
 
-    # ERROR
-    # targets = module.params['targets'].lower()\r\nAttributeError: 'NoneType' object has no attribute 'lower'\r\n", "msg": "MODULE FAILURE"}
-
     # ===========================================
     # Build nim_clients list
     # ===========================================
@@ -70,13 +67,13 @@ def main():
     std_err = ''
     nim_clients = []
 
-    cmd = ['lsnim','-t','standalone']
+    cmd = ['lsnim', '-t', 'standalone']
 
     try:
         p = subprocess.Popen(cmd, shell=False, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (std_out, std_err) = p.communicate()
     except Exception as e:
-        msg = 'Command: {} Exception:{} Exception.Args{} =>Data:{} ... Error :{}'.format(cmd, type(e), e.args , std_out, std_err)
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'.format(cmd, e.args, std_out, std_err)
         module.fail_json(msg=msg)
 
     # nim_clients list
@@ -97,7 +94,7 @@ def main():
             result  (dict): The result of the command
         """
 
-        rsh_cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,'/usr/bin/oslevel -s']
+        rsh_cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/bin/oslevel -s']
 
         p = subprocess.Popen(rsh_cmd,
                                 shell=False,
@@ -115,7 +112,7 @@ def main():
     results = {}
 
     for machine in nim_clients:
-        process = threading.Thread(target=run_cmd, args=(machine, results) )
+        process = threading.Thread(target=run_cmd, args=(machine, results))
         process.start()
         threads.append(process)
 
