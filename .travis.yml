@@ -12,7 +12,7 @@ install:
 # command to run tests
 script:
   - flake8 . --show-source --max-line-length=120 --statistics --count -qq
-  - ansible-playbook test_aix_suma.yml --syntax-check
-  - ansible-playbook test_aix_suma.yml -vvv
+  - ansible-playbook playbook_aix_suma.yml --syntax-check
+  - ansible-playbook playbook_aix_suma.yml -vvv
 
 
