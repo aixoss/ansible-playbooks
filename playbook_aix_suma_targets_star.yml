@@ -1,21 +1,18 @@
-- hosts: all
-  gather_facts: True
-
-  vars:
-    # File that ansible will use for logs
-    logfile: /var/log/ansible_aix_suma.log
+---
+- name: "SUMA on AIX"
+  hosts: all
+  gather_facts: yes
 
   tasks:
-
 
   #######################################################################
   ### AIX SUMA: Star with targets
   #######################################################################
 
-    - name: "AIX SUMA: Wildcard4 with targets"
-      aix_suma:
-        targets: '*'
-      ignore_errors: True
+  - name: "AIX SUMA: Wildcard4 with targets"
+    aix_suma:
+      targets: '*'
+    ignore_errors: True
 
-      register: targets
-    - debug: var=targets.debug_targets
+    register: targets
+  - debug: var=targets.debug_targets
