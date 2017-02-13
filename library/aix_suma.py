@@ -119,6 +119,12 @@ def main():
     for line in std_out.rstrip().split('\n'):
         nim_clients.append(line.split()[0])
 
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    debug_data.append('NIM Clients: {}'.format(nim_clients))
+    #--------------------------------------------------------
+
     # ==========================================================================
     # Launch threads
     # ==========================================================================
@@ -134,12 +140,24 @@ def main():
     for process in threads:
         process.join()
 
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    debug_data.append('oslevel Dict: {}'.format(oslevel_list))
+    #--------------------------------------------------------
+
     # ==========================================================================
     # Build targets list
     # ==========================================================================
 
     target_results = []
     targets_list = targets.split(' ')
+
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    debug_data.append('Targets List: {}'.format(targets_list))
+    #--------------------------------------------------------
 
     for target in targets_list:
 
@@ -175,6 +193,12 @@ def main():
     # Join two lists WITHOUT duplicate
     clients = list(set(target_results) & set(nim_clients))
 
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    debug_data.append('Targets Range: {}'.format(clients))
+    #--------------------------------------------------------
+
     # ==========================================================================
     # Generate oslevel dictionnary from 'nim clients' on target machines
     # ==========================================================================
@@ -188,32 +212,97 @@ def main():
     # Min oslevel from the targets_oslevel
     min_oslvl = min_oslevel(targets_oslevel)[:7]
 
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    debug_data.append('{} <= Min Oslevel'.format(min_oslvl))
+    #--------------------------------------------------------
+
+    # ==========================================================================
+    # Make dir
+    # ==========================================================================
+
+    # mkdir <DLTarget>/7100-04-01-1543-lpp_source => /usr/sys/inst.images/7100-04-01-1543-lpp_source
+
+    mkdir_cmd = 'mkdir '
+    mkdir_path = '/usr/sys/inst.images/'
+    mkdir_oslevel = '{}-lpp_source '.format(min_oslevel(targets_oslevel))
+
+    mkdir_params = ''.join((mkdir_cmd, mkdir_path, mkdir_oslevel))
+
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    debug_data.append('mkdir command:{}'.format(mkdir_params))
+    #--------------------------------------------------------
+
+    rc, stdout, stderr = module.run_command(mkdir_params)
+
     # ==========================================================================
     # Build suma command
     # ==========================================================================
 
-    suma_task = '/usr/sbin/suma -x '
+    suma_cmd = '/usr/sbin/suma -x '
     suma_action = '-a Action=Download '
-    suma_display = '-a DisplayName="Download SP" '
     suma_rqtype = '-a RqType=SP '
     suma_filterml = '-a FilterML={} '.format(min_oslvl)
+    suma_dltarget = '-a DLTarget={}-lpp_source '.format(min_oslevel(targets_oslevel))
     suma_rqname = '-a RqName={} '.format(min_oslevel(targets_oslevel))
+    suma_display = '-a DisplayName="Download SP" '
 
-    suma_cmd = ''.join((suma_task, suma_action, suma_rqtype, suma_filterml, suma_rqname, suma_display))
+    suma_params = ''.join((suma_cmd, suma_action, suma_rqtype, suma_rqname, suma_filterml, suma_dltarget, suma_display))
 
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    debug_data.append('suma command:{}'.format(suma_params))
+    #--------------------------------------------------------
 
-    rc, stdout, stderr = module.run_command(suma_cmd)
+    rc, stdout, stderr = module.run_command(suma_params)
+
+    # if rc == 0:
+    #     module.exit_json(
+    #         changed=False,
+    #         message="SUMA Command: {}".format(suma_params),
+    #         debug_targets=stdout.split('\n'))
+    # else:
+    #     if stderr:
+    #         module.fail_json(msg="SUMA Command: {} => Error :{}".format(suma_params, stderr.split('\n')))
+    #     else:
+    #         module.fail_json(msg="SUMA Command: {} => Output :{}".format(suma_params, stdout.split('\n')))
+
+    # ==========================================================================
+    # Build nim command
+    # ==========================================================================
+
+    nim_cmd = '/usr/sbin/nim '
+    nim_operation = '-o define '
+    nim_type = '-t lpp_source '
+    nim_location = '-a location=/usr/sys/inst.images/{}-lpp_source '.format(min_oslevel(targets_oslevel))
+    nim_server = '-a server=master '
+    nim_package = '-a packages=all {}-lpp_source '.format(min_oslevel(targets_oslevel))
+
+    nim_params = ''.join((nim_cmd, nim_operation, nim_type, nim_location, nim_server, nim_package))
+
+    rc, stdout, stderr = module.run_command(nim_params)
 
     if rc == 0:
         module.exit_json(
             changed=False,
-            message="SUMA Execute: {}".format(suma_cmd),
-            debug_targets=stdout.split('\n'))
+            message="NIM Command: {}".format(nim_params),
+            debug_targets=debug_data)
     else:
         if stderr:
-            module.fail_json(msg="SUMA Execute: {} => Error :{}".format(suma_cmd, stderr.split('\n')))
+            module.fail_json(msg="NIM Master Command: {} => Error :{}".format(nim_params, stderr.split('\n')))
         else:
-            module.fail_json(msg="SUMA Execute: {} => Output :{}".format(suma_cmd, stdout.split('\n')))
+            module.fail_json(msg="NIM Master Command: {} => Output :{}".format(nim_params, stdout.split('\n')))
+
+###########################################################################################################
+
+    # module.exit_json(
+    #     changed=False,
+    #     msg="Command: {} => Data: {}".format(suma_cmd, nim_clients),
+    #     debug_targets=debug_data)
 
 ###########################################################################################################
 
