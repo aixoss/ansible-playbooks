@@ -11,7 +11,10 @@
 
   - name: "AIX SUMA: All targets"
     aix_suma:
+      oslevel: '7100-04-02-1614'
+      location: ''
       targets: all
+      action: download
     ignore_errors: True
 
     register: targets
