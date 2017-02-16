@@ -55,6 +55,15 @@ def min_oslevel(dictionnary):
     return min_oslevel
 
 
+# TODO (CGB) Add function and test
+# def remove_empty_keys(dictionnary):
+
+    # clean_dictionnary = {k:v for k,v in dictionnary.items() if v}
+
+#     return clean_dictionnary
+
+
+
 def run_cmd(machine, result):
     """
     Run command function, command to be 'threaded'
@@ -80,7 +89,10 @@ def main():
 
     module = AnsibleModule(
         argument_spec=dict(
+            oslevel=dict(required=False, type='str'),
+            location=dict(required=False, type='str'),
             targets=dict(required=False, type='str'),
+            action=dict(choices=['download', 'preview'], type='str'),
         ),
         supports_check_mode=True
     )
@@ -89,12 +101,25 @@ def main():
     # Get Module params
     # ===========================================
 
-    # TODO (CGB): Update
+    if module.params['oslevel']:
+        oslevel = module.params['oslevel']
+    else:
+        raise Exception("Error: OS level field is empty")
+
+    if module.params['location']:
+        location = module.params['location']
+    # else:
+    #     raise Exception("Error: Location field is empty")
 
     if module.params['targets']:
         targets = module.params['targets']
     else:
         raise Exception("Error: Targets field is empty")
+
+    if module.params['action']:
+        action = module.params['action']
+    else:
+        raise Exception("Error: Action field is empty")
 
     debug_data = []
 
@@ -209,13 +234,20 @@ def main():
         if client in oslevel_list:
             targets_oslevel[client] = oslevel_list[client]
 
+    # ==========================================================================
+    # Select current oslevel and min oslevel
+    # ==========================================================================
+
     # Min oslevel from the targets_oslevel
-    min_oslvl = min_oslevel(targets_oslevel)[:7]
+    mininum_oslevel = min_oslevel(targets_oslevel)[:7]
+
+    if oslevel:
+        current_oslevel = oslevel
 
     #########################################################
     # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
     #########################################################
-    debug_data.append('{} <= Min Oslevel'.format(min_oslvl))
+    debug_data.append('{} <= Min Oslevel'.format(mininum_oslevel))
     #--------------------------------------------------------
 
     # ==========================================================================
@@ -226,7 +258,7 @@ def main():
 
     mkdir_cmd = 'mkdir '
     mkdir_path = '/usr/sys/inst.images/'
-    mkdir_oslevel = '{}-lpp_source '.format(min_oslevel(targets_oslevel))
+    mkdir_oslevel = '{}-lpp_source '.format(current_oslevel)
 
     mkdir_params = ''.join((mkdir_cmd, mkdir_path, mkdir_oslevel))
 
@@ -243,14 +275,20 @@ def main():
     # ==========================================================================
 
     suma_cmd = '/usr/sbin/suma -x '
-    suma_action = '-a Action=Download '
     suma_rqtype = '-a RqType=SP '
-    suma_filterml = '-a FilterML={} '.format(min_oslvl)
-    suma_dltarget = '-a DLTarget={}-lpp_source '.format(min_oslevel(targets_oslevel))
-    suma_rqname = '-a RqName={} '.format(min_oslevel(targets_oslevel))
-    suma_display = '-a DisplayName="Download SP" '
+    suma_filterml = '-a FilterML={} '.format(mininum_oslevel)
+    suma_dltarget = '-a DLTarget=/usr/sys/inst.images/{}-lpp_source '.format(current_oslevel)
+    suma_rqname = '-a RqName={} '.format(current_oslevel)
 
-    suma_params = ''.join((suma_cmd, suma_action, suma_rqtype, suma_rqname, suma_filterml, suma_dltarget, suma_display))
+    if action == 'download':
+        suma_action = '-a Action=Download '
+        suma_display = '-a DisplayName="Download SP" '
+    elif action == 'preview':
+        suma_action = '-a Action=Preview '
+        suma_display = '-a DisplayName="Preview SP" '
+
+    # suma_params = ''.join((suma_cmd, suma_action, suma_rqtype, suma_rqname, suma_filterml, suma_dltarget, suma_display))
+    suma_params = ''.join((suma_cmd, suma_action, suma_rqtype, suma_rqname, suma_filterml, suma_dltarget))
 
     #########################################################
     # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
@@ -260,11 +298,21 @@ def main():
 
     rc, stdout, stderr = module.run_command(suma_params)
 
-    # if rc == 0:
-    #     module.exit_json(
-    #         changed=False,
-    #         message="SUMA Command: {}".format(suma_params),
-    #         debug_targets=stdout.split('\n'))
+    if rc == 0:
+        # module.exit_json(
+        #     changed=False,
+        #     message="SUMA Command: {}".format(suma_params),
+        #     debug_targets=stdout.split('\n'))
+
+        debug_data.append('suma command output:{}'.format(stdout))
+
+    # m_fail = re.search('\s+\d+\sfailed', debug_data)
+
+    # if m_fail:
+    #     debug_data.append('regex fail string:{}'.format( m_fail.group() ))
+
+    # 'Summary:', '        207 downloaded', '        0 failed', '        1 skipped', ''
+
     # else:
     #     if stderr:
     #         module.fail_json(msg="SUMA Command: {} => Error :{}".format(suma_params, stderr.split('\n')))
@@ -278,31 +326,38 @@ def main():
     nim_cmd = '/usr/sbin/nim '
     nim_operation = '-o define '
     nim_type = '-t lpp_source '
-    nim_location = '-a location=/usr/sys/inst.images/{}-lpp_source '.format(min_oslevel(targets_oslevel))
+    nim_location = '-a location=/usr/sys/inst.images/{}-lpp_source '.format(current_oslevel)
     nim_server = '-a server=master '
-    nim_package = '-a packages=all {}-lpp_source '.format(min_oslevel(targets_oslevel))
+    nim_package = '-a packages=all {}-lpp_source '.format(current_oslevel)
 
     nim_params = ''.join((nim_cmd, nim_operation, nim_type, nim_location, nim_server, nim_package))
 
-    rc, stdout, stderr = module.run_command(nim_params)
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    debug_data.append('nim command:{}'.format(nim_params))
+    #--------------------------------------------------------
 
-    if rc == 0:
-        module.exit_json(
-            changed=False,
-            message="NIM Command: {}".format(nim_params),
-            debug_targets=debug_data)
-    else:
-        if stderr:
-            module.fail_json(msg="NIM Master Command: {} => Error :{}".format(nim_params, stderr.split('\n')))
-        else:
-            module.fail_json(msg="NIM Master Command: {} => Output :{}".format(nim_params, stdout.split('\n')))
+    # rc, stdout, stderr = module.run_command(nim_params)
+
+    # if rc == 0:
+    #     module.exit_json(
+    #         changed=False,
+    #         message="NIM Command: {}".format(nim_params),
+    #         debug_targets=debug_data)
+    # else:
+    #     if stderr:
+    #         module.fail_json(msg="NIM Master Command: {} => Error :{}".format(nim_params, stderr.split('\n')))
+    #     else:
+    #         module.fail_json(msg="NIM Master Command: {} => Output :{}".format(nim_params, stdout.split('\n')))
 
 ###########################################################################################################
 
-    # module.exit_json(
-    #     changed=False,
-    #     msg="Command: {} => Data: {}".format(suma_cmd, nim_clients),
-    #     debug_targets=debug_data)
+    module.exit_json(
+        changed=False,
+        msg="Command: {} => Data: {}".format(nim_params, stdout.split('\n') ),
+        # msg="Debug Data: {}".format(targets_oslevel),
+        debug_targets=debug_data)
 
 ###########################################################################################################
 
