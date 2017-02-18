@@ -55,15 +55,6 @@ def min_oslevel(dictionnary):
     return min_oslevel
 
 
-# TODO (CGB) Add function and test
-# def remove_empty_keys(dictionnary):
-
-    # clean_dictionnary = {k:v for k,v in dictionnary.items() if v}
-
-#     return clean_dictionnary
-
-
-
 def run_cmd(machine, result):
     """
     Run command function, command to be 'threaded'
@@ -168,8 +159,20 @@ def main():
     #########################################################
     # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
     #########################################################
-    debug_data.append('oslevel Dict: {}'.format(oslevel_list))
+    debug_data.append('oslevel unclean dict: {}'.format(oslevel_list))
     #--------------------------------------------------------
+
+    # ==========================================================================
+    # Delete empty value of dictionnary
+    # ==========================================================================
+
+    # for key in [ k for (k,v) in oslevel_list.items() if not v ]:
+    #     del oslevel_list[key]
+
+    #########################################################
+    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
+    #########################################################
+    # debug_data.append('oslevel cleaned dict: {}'.format(oslevel_list))
 
     # ==========================================================================
     # Build targets list
@@ -196,8 +199,10 @@ def main():
             name, indices = targets[:-1].split('[')
             start, end = indices.split(':')
 
-            for i in range(int(start), int(end)+1):
+            for i in range(int(start), int(end) + 1):
                 target_results.append('{0}{1:02}'.format(name, i))
+
+            break
 
         #------------------------------------------------------------
         # Build target(s) from: all
@@ -206,6 +211,7 @@ def main():
         m = re.search('[Aa][Ll][Ll]', target)
         if m:
             target_results = nim_clients
+            break
 
         #------------------------------------------------------------
         # Build target(s) from: *
@@ -214,6 +220,14 @@ def main():
         m = re.search('[*]', target)
         if m:
             target_results = nim_clients
+            break
+
+        #------------------------------------------------------------
+        # Build target(s) from: quimby05 quimby08 quimby12
+        #------------------------------------------------------------
+
+        target_results.append(target)
+
 
     # Join two lists WITHOUT duplicate
     clients = list(set(target_results) & set(nim_clients))
