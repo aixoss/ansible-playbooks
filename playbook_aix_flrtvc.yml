@@ -1,0 +1,16 @@
+- name: "FLRTVC on AIX playbook"
+  hosts: all
+  gather_facts: no
+  tasks:
+    - name: "FLRTVC"
+      aix_flrtvc:
+        targets: quimby01 quimby02
+        verbose: yes
+        apar: all
+        csv: /apar.csv
+        filesets: devices
+        path: /flrtvc-ansible
+        check_only: no
+        download_only: no
+      register: result
+    - debug: var=result
