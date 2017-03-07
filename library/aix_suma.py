@@ -25,7 +25,7 @@
 DOCUMENTATION = '''
 ---
 module: aix_suma
-author: "Cyril Bouhallier"
+author: "Cyril Bouhallier, Patrice Jacquin"
 version_added: "1.0.0"
 requirements: [ AIX ]
 
@@ -43,18 +43,17 @@ debug_data = []
 params = {}
 nim_changed = False
 
+
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def min_oslevel(dic):
-    """
-    Find the minimun value of a dictionnary
+    """Find the minimun value of a dictionnary.
 
-    args:
-        dictionnary - Dictionnary {machine: oslevel}
+    arguments:
+        dict - Dictionnary {machine: oslevel}
     return:
         minimun oslevel from the dictionnary
     """
-
     min_oslevel = None
 
     for key, value in iter(dic.items()):
@@ -67,15 +66,13 @@ def min_oslevel(dic):
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def max_oslevel(dic):
-    """
-    Find the maximum value of a the oslevel dictionary
+    """Find the maximum value of a the oslevel dictionary.
 
-    args:
+    arguments:
         dic - Dictionnary {client: oslevel}
     return:
         maximum oslevel from the dictionnary
     """
-
     max_oslevel = None
 
     for key, value in iter(dic.items()):
@@ -88,15 +85,14 @@ def max_oslevel(dic):
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def run_cmd(machine, result):
-    """
-    Run command function, command to be 'threaded'
+    """Run command function, command to be 'threaded'.
+
     The thread then store the outpout in the dedicated slot of the result dictionnary.
 
-    args:
+    arguments:
         machine (str): The name machine
         result  (dict): The result of the command
     """
-
     rsh_cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/bin/oslevel -s']
 
     p = subprocess.Popen(rsh_cmd,
@@ -125,51 +121,51 @@ def expand_targets(targets_list, nim_clients):
 
     for target in targets_list:
 
-        #------------------------------------------------------------
+        # -----------------------------------------------------------
         # Build target(s) from: range i.e. quimby[7:12]
-        #------------------------------------------------------------
+        # -----------------------------------------------------------
 
         m = re.match(r"(\w+)\[(\d+):(\d+)\]", target)
         if m:
 
-            name  = m.group(1)
+            name = m.group(1)
             start = m.group(2)
-	    end   = m.group(3)
+            end = m.group(3)
 
             for i in range(int(start), int(end) + 1):
                 # target_results.append('{0}{1:02}'.format(name, i))
-		curr_name = name + str(i)
-		if curr_name in nim_clients:
-		    clients.append(curr_name)
+                curr_name = name + str(i)
+                if curr_name in nim_clients:
+                    clients.append(curr_name)
 
             continue
 
-        #------------------------------------------------------------
+        # -----------------------------------------------------------
         # Build target(s) from: val*. i.e. quimby*
-        #------------------------------------------------------------
+        # -----------------------------------------------------------
 
         m = re.match(r"(\w+)\*$", target)
         if m:
 
-            name  = m.group(1)
+            name = m.group(1)
 
             for curr_name in nim_clients:
-	        if re.match(r"^%s\.*" % name, curr_name):
-		    clients.append(curr_name)
+                if re.match(r"^%s\.*" % name, curr_name):
+                    clients.append(curr_name)
 
             continue
 
-        #------------------------------------------------------------
+        # -----------------------------------------------------------
         # Build target(s) from: all or *
-        #------------------------------------------------------------
+        # -----------------------------------------------------------
 
         if target.upper() == 'ALL' or target == '*':
             clients = nim_clients
             continue
 
-        #------------------------------------------------------------
+        # -----------------------------------------------------------
         # Build target(s) from: quimby05 quimby08 quimby12
-        #------------------------------------------------------------
+        # -----------------------------------------------------------
 
         clients.append(target)
 
@@ -179,10 +175,7 @@ def expand_targets(targets_list, nim_clients):
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def get_nim_clients():
-    """
-        Get the list of the standalones defined on the nim master
-    """
-
+    """Get the list of the standalones defined on the nim master."""
     std_out = ''
     std_err = ''
     clients_list = []
@@ -227,7 +220,7 @@ def exec_cmd(cmd):
     debug_data.append('exec command Error:{}'.format(std_err))
     logging.debug('exec command Error:{}'.format(std_err))
     logging.debug('exec command output:{}'.format(std_out))
-    #--------------------------------------------------------
+    # --------------------------------------------------------
 
     return std_out
 
@@ -235,12 +228,9 @@ def exec_cmd(cmd):
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def get_nim_lpp_source():
-    """
-        Get the list of the lpp_source defined on the nim master
-    """
-
+    """Get the list of the lpp_source defined on the nim master."""
     std_out = ''
-#    std_err = ''
+    # std_err = ''
     lpp_source_list = {}
 
     cmd = ['lsnim', '-t', 'lpp_source', '-l']
@@ -268,52 +258,46 @@ def get_nim_lpp_source():
     return lpp_source_list
 
 
-# ----------------------------------------------------------------
-# compute_rq_type
-#
-#    Compute the suma rq_type from the given target oslevel
-#
-#    return:
-#        Latest when oslevel is blank or latest (not case sensitive)
-#        TL     when oslevel is xxxx-xx(-00-0000)
-#        SP     when oslevel is xxxx-xx-xx(-xxxx)
-#
-#    raise Error in cae of error
-# ----------------------------------------------------------------
 def compute_rq_type(oslevel):
+    """Compute rq_type.
 
-    if (oslevel == None) or (not oslevel.strip()) or (oslevel.upper() == 'LATEST'):
+    Compute the suma rq_type from the given target oslevel
+
+    return:
+        Latest when oslevel is blank or latest (not case sensitive)
+        TL     when oslevel is xxxx-xx(-00-0000)
+        SP     when oslevel is xxxx-xx-xx(-xxxx)
+
+    raise Error in case of error
+    """
+    if (oslevel is None) or (not oslevel.strip()) or (oslevel.upper() == 'LATEST'):
         return 'Latest'
     if re.match(r"^([0-9]{4}-[0-9]{2})(|-00|-00-0000)$", oslevel):
         return 'TL'
     if re.match(r"^([0-9]{4}-[0-9]{2}-[0-9]{2})(|-[0-9]{4})$", oslevel):
-        return 'SP' 
+        return 'SP'
 
     logging.debug("Error: oslevel is not recognized")
 
     raise Exception("Error: oslevel is not recognized")
 
 
-# ----------------------------------------------------------------
-# compute_rq_name
-#
-#    Compute the suma rq_name
-#
-#    -for Latest: return 
-#    -for TL: return the TL value in the forme xxxx-xx-00-0000
-#    -for SP: <PJPJ> TO BE UPDATED
-#
-#    return:
-#        rq_name value
-# ----------------------------------------------------------------
 def compute_rq_name(rq_type, oslevel, clients_oslevel):
+    """Compute rq_name.
 
-    metadata_dir = "/tmp/ansible/metadata" # <TODO> get an env variable for that
+    Compute the suma rq_name
+        - for Latest: return
+        - for TL: return the TL value in the forme xxxx-xx-00-0000
+        - for SP: <PJPJ> TO BE UPDATED
+    return:
+       rq_name value
+    """
+    metadata_dir = "/tmp/ansible/metadata"  # <TODO> get an env variable for that
     rq_name = ''
     if rq_type == 'Latest':
         oslevel_max = re.match(r"^([0-9]{4}-[0-9]{2})(|-[0-9]{2}|-[0-9]{2}-[0-9]{4})$", max_oslevel(clients_oslevel)).group(1)
         oslevel_min = re.match(r"^([0-9]{4}-[0-9]{2})(|-[0-9]{2}|-[0-9]{2}-[0-9]{4})$", min_oslevel(clients_oslevel)).group(1)
-        
+
         if re.match(r"^([0-9]{4})", oslevel_min).group(1) != \
            re.match(r"^([0-9]{4})", oslevel_max).group(1):
             debug_data.append("Error: Release level mismatch, only AIX {} SP/TL will be downloaded\n\n".format(oslevel_max[0:2]))
@@ -339,7 +323,7 @@ def compute_rq_name(rq_type, oslevel, clients_oslevel):
 
         cmd = ['/usr/sbin/suma', '-x', '-a', 'Action=Metadata', \
                '-a', 'RqType=Latest', '-a', suma_filterml, \
-               '-a', suma_dltarget,  '-a', suma_display]
+               '-a', suma_dltarget, '-a', suma_display]
 
         stdout = exec_cmd(cmd)
 
@@ -347,7 +331,7 @@ def compute_rq_name(rq_type, oslevel, clients_oslevel):
         # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
         #########################################################
         debug_data.append('suma command:{}'.format(cmd))
-        #--------------------------------------------------------
+        # -------------------------------------------------------
 
         # find latest SP for highest TL
         v_max = None
@@ -393,7 +377,7 @@ def compute_rq_name(rq_type, oslevel, clients_oslevel):
 
             cmd = ['/usr/sbin/suma', '-x', '-a', 'Action=Metadata', \
                    '-a', 'RqType=Latest', '-a', suma_filterml, \
-                   '-a', suma_dltarget,  '-a', suma_display]
+                   '-a', suma_dltarget, '-a', suma_display]
 
             stdout = exec_cmd(cmd)
 
@@ -401,7 +385,7 @@ def compute_rq_name(rq_type, oslevel, clients_oslevel):
             # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
             #########################################################
             debug_data.append('suma command:{}'.format(cmd))
-            #--------------------------------------------------------
+            # -------------------------------------------------------
 
             # find SP build number
             file = metadata_dir + "/installp/ppc/" + oslevel + ".xml"
@@ -418,16 +402,13 @@ def compute_rq_name(rq_type, oslevel, clients_oslevel):
     return rq_name
 
 
-# ----------------------------------------------------------------
-# compute_filter_ml
-# ----------------------------------------------------------------
 def compute_filter_ml(clients_oslevel, rq_type):
-
+    """Compute filter_ml."""
     minimum_oslevel = None
-    
+
     if rq_type == 'Latest':
         vers_max = re.match(r"^([0-9]{4})", max_oslevel(clients_oslevel)).group(1)
-    
+
         for key, value in iter(clients_oslevel.items()):
             if re.match(r"^([0-9]{4})", value).group(1) == vers_max and \
                (minimum_oslevel is None or value < min_oslevel):
@@ -440,11 +421,8 @@ def compute_filter_ml(clients_oslevel, rq_type):
     return minimum_oslevel
 
 
-# ----------------------------------------------------------------
-# compute lpp source name based on the location
-# ----------------------------------------------------------------
 def compute_lpp_source_name(location, rq_name):
-
+    """Compute lpp source name based on the location."""
     loc = ''
     if not location or not location.strip() or location[0] == '/':
         loc = "{}-lpp_source".format(rq_name)
@@ -456,11 +434,8 @@ def compute_lpp_source_name(location, rq_name):
     return loc
 
 
-# ----------------------------------------------------------------
-# compute suma DL target based on lpp source name
-# ----------------------------------------------------------------
 def compute_dl_target(location, lpp_source, nim_lpp_sources):
-
+    """Compute suma DL target based on lpp source name."""
     if not location or not location.strip():
         loc = "/usr/sys/inst.images"
     else:
@@ -478,7 +453,7 @@ def compute_dl_target(location, lpp_source, nim_lpp_sources):
         dl_target = nim_lpp_sources[loc]
 
     return dl_target
-    
+
 
 # ----------------------------------------------------------------
 # MAIN
@@ -492,13 +467,13 @@ def main():
             targets=dict(required=True, type='str'),
             action=dict(choices=['download', 'preview'], type='str'),
             description=dict(required=False, type='str'),
-            
+
         ),
         supports_check_mode=True
     )
 
     # Open log file <TODO> - to be changed
-    logging.basicConfig(filename='/tmp/ansibletest.log',level=logging.DEBUG) 
+    logging.basicConfig(filename='/tmp/ansibletest.log', level=logging.DEBUG)
 
     # Get Module params
     if module.params['oslevel']:
@@ -541,7 +516,7 @@ def main():
     #########################################################
     debug_data.append('lpp source list: {}'.format(nim_lpp_sources))
     logging.debug('lpp source list: {}'.format(nim_lpp_sources))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # ===========================================
     # Build nim_clients list
@@ -554,7 +529,7 @@ def main():
     #########################################################
     debug_data.append('NIM Clients: {}'.format(nim_clients))
     logging.debug('NIM Clients: {}'.format(nim_clients))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # Build targets list
     targets_list = targets.split(' ')
@@ -564,7 +539,7 @@ def main():
     #########################################################
     debug_data.append('Targets List: {}'.format(targets_list))
     logging.debug('Targets List: {}'.format(targets_list))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     target_clients = []
     target_clients = expand_targets(targets_list, nim_clients)
@@ -574,7 +549,7 @@ def main():
     #########################################################
     debug_data.append('Target Clients: {}'.format(target_clients))
     logging.debug('Target Clients: {}'.format(target_clients))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # ==========================================================================
     # Launch threads to collect information on targeted nim clients
@@ -596,7 +571,7 @@ def main():
     #########################################################
     debug_data.append('oslevel unclean dict: {}'.format(clients_oslevel))
     logging.debug('oslevel unclean dict: {}'.format(clients_oslevel))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # ==========================================================================
     # Delete empty value of dictionnary
@@ -604,10 +579,10 @@ def main():
 
     removed_oslevel = []
 
-    for key in [ k for (k,v) in clients_oslevel.items() if not v ]:
+    for key in [k for (k, v) in clients_oslevel.items() if not v]:
         removed_oslevel.append(key)
         del clients_oslevel[key]
-    
+
     #########################################################
     # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
     #########################################################
@@ -615,7 +590,6 @@ def main():
     debug_data.append('unavailable client list: {}'.format(removed_oslevel))
     logging.debug('oslevel cleaned dict: {}'.format(clients_oslevel))
     logging.debug('unavailable client list: {}'.format(removed_oslevel))
-
 
     # compute suma request type based on oslevel property
     rq_type = compute_rq_type(req_oslevel)
@@ -626,7 +600,7 @@ def main():
     #########################################################
     debug_data.append('Suma req Type: {}'.format(rq_type))
     logging.debug('Suma req Type: {}'.format(rq_type))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # ==========================================================================
     # Compute the filter_ml i.e. the min oslevel of the target clients
@@ -641,7 +615,7 @@ def main():
     #########################################################
     debug_data.append('{} <= Min Oslevel'.format(filter_ml))
     logging.debug('{} <= Min Oslevel'.format(filter_ml))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # compute suma request name based on metadata info
     rq_name = compute_rq_name(rq_type, req_oslevel, clients_oslevel)
@@ -652,7 +626,7 @@ def main():
     #########################################################
     debug_data.append('Suma req Name: {}'.format(rq_name))
     logging.debug('Suma req Name: {}'.format(rq_name))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # metadata does not match any fixes
     if not rq_name or not rq_name.strip():
@@ -666,7 +640,7 @@ def main():
     #########################################################
     debug_data.append('Suma req Name: {}'.format(rq_name))
     logging.debug('Suma req Name: {}'.format(rq_name))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # compute lpp source name based on request name
     lpp_source = compute_lpp_source_name(location, rq_name)
@@ -677,7 +651,7 @@ def main():
     #########################################################
     debug_data.append('Lpp source name: {}'.format(lpp_source))
     logging.debug('Lpp source name: {}'.format(lpp_source))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # compute suma dl target based on lpp source name
     dl_target = compute_dl_target(location, lpp_source, nim_lpp_sources)
@@ -688,7 +662,7 @@ def main():
     #########################################################
     debug_data.append('DL target: {}'.format(dl_target))
     logging.debug('DL target: {}'.format(dl_target))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # ==========================================================================
     # Make dir
@@ -703,7 +677,7 @@ def main():
     #########################################################
     debug_data.append('mkdir command:{}'.format(dl_target))
     logging.debug('mkdir command:{}'.format(dl_target))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     # ==========================================================================
     # Build suma command for preview
@@ -724,7 +698,7 @@ def main():
     #########################################################
     debug_data.append('suma command:{}'.format(suma_params))
     logging.debug('suma command:{}'.format(suma_params))
-    #--------------------------------------------------------
+    # -------------------------------------------------------
 
     rc, stdout, stderr = module.run_command(suma_params)
 
@@ -736,8 +710,8 @@ def main():
 
     # parse output to see if there is something to download
     downloaded = 0
-    failed     = 0
-    skipped    = 0
+    failed = 0
+    skipped = 0
     for line in stdout.rstrip().split('\n'):
         line = line.rstrip()
         matched = re.match(r"^\s+(\d+)\s+downloaded$", line)
@@ -760,9 +734,9 @@ def main():
     # ==========================================================================
     if action == 'download':
         if downloaded != 0:
-        
+
             # ==========================================================================
-            # Build suma command for download 
+            # Build suma command for download
             # ==========================================================================
             suma_cmd = '/usr/sbin/suma -x '
             suma_rqtype = '-a RqType=SP '
@@ -780,7 +754,7 @@ def main():
             #########################################################
             debug_data.append('suma command:{}'.format(suma_params))
             logging.debug('suma command:{}'.format(suma_params))
-            #--------------------------------------------------------
+            # -------------------------------------------------------
 
             rc, stdout, stderr = module.run_command(suma_params)
 
@@ -794,8 +768,8 @@ def main():
 
             # parse output to see if there is something to download
             downloaded = 0
-            failed     = 0
-            skipped    = 0
+            failed = 0
+            skipped = 0
             for line in stdout.rstrip().split('\n'):
                 line = line.rstrip()
                 matched = re.match(r"^\s+(\d+)\s+downloaded$", line)
@@ -840,7 +814,7 @@ def main():
             #########################################################
             debug_data.append('nim command:{}'.format(nim_params))
             logging.debug('nim command:{}'.format(nim_params))
-            #--------------------------------------------------------
+            # -------------------------------------------------------
 
             rc, stdout, stderr = module.run_command(nim_params)
 
