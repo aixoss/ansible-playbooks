@@ -84,6 +84,9 @@ def download(src, dst):
 			subprocess.check_output(args=['/bin/wget', '--no-check-certificate', src, '-P', os.path.dirname(dst)], stderr=subprocess.STDOUT)
 		except subprocess.CalledProcessError as e:
 			logging.warn('EXCEPTION cmd={} rc={} output={}'.format(e.cmd, e.returncode, e.output))
+			#if e.returncode == 3:
+			#	subprocess.call(args=['/usr/sbin/chfs', '-a size=+100M', os.path.dirname(dst)])
+				
 			res = False
 	else:
 		logging.debug('{} already exists'.format(dst))
@@ -112,7 +115,6 @@ def check_prereq(epkg, ref):
 	"""
 	Check efix prerequisites based on fileset current level
 	args:
-	    dir  (str): The directory to store efixes
 		epkg (str): The efix to check
 		ref	 (str): The filename with reference fileset levels
 	"""
@@ -159,11 +161,14 @@ def run_lslpp(machine, file):
 		file	(str): The filename to store stdout
 	"""
 	try:
-		cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/bin/lslpp -Lcq']
+		if 'master' in machine:
+			cmd = ['/bin/lslpp', '-Lcq']
+		else:
+			cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/bin/lslpp -Lcq']
 		stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
 		with open(file,'w') as f: f.write(stdout)
 	except subprocess.CalledProcessError as e:
-		logging.warn('EXCEPTION cmd={} rc={} output={}'.format(e.cmd, e.returncode, e.output))
+		logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, e.cmd, e.returncode, e.output))
 
 @logged
 def run_emgr(machine, file):
@@ -174,11 +179,14 @@ def run_emgr(machine, file):
 		file	(str): The filename to store stdout
 	"""
 	try:
-		cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/sbin/emgr -lv3']
+		if 'master' in machine:
+			cmd = ['/usr/sbin/emgr', '-lv3']
+		else:
+			cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/sbin/emgr -lv3']
 		stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
 		with open(file,'w') as f: f.write(stdout)
 	except subprocess.CalledProcessError as e:
-		logging.warn('EXCEPTION cmd={} rc={} output={}'.format(e.cmd, e.returncode, e.output))
+		logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, e.cmd, e.returncode, e.output))
 
 @start_threaded(thrds)
 @logged
@@ -188,8 +196,8 @@ def run_flrtvc(machine, output, apar, csv, filesets, path, verbose):
 	args:
 		machine (str): The remote machine name
 		output	(dict): The result of the command
+		apar	(str): 
 	"""
-
 	# Run 'lslpp -Lcq' on the remote machine and save to file
 	lslpp_file = 'lslpp_{}.txt'.format(machine)
 	p1 = threading.Thread(target=run_lslpp, args=(machine, lslpp_file))
@@ -204,28 +212,30 @@ def run_flrtvc(machine, output, apar, csv, filesets, path, verbose):
 	p1.join()
 	p2.join()
 
-	# Prepare flrtvc command
-	cmd = ['/usr/bin/flrtvc.ksh', '-e', emgr_file, '-l', lslpp_file]
-	if apar and apar != 'all': cmd += ['-t', apar]
-	if csv:	cmd += ['-f', csv]
-	if filesets: cmd += ['-g', filesets]
-
-	# Run flrtvc in compact and verbose mode
 	try:
+		# Prepare flrtvc command
+		cmd = ['/usr/bin/flrtvc.ksh', '-e', emgr_file, '-l', lslpp_file]
+		if apar and apar != 'all': cmd += ['-t', apar]
+		if csv:	cmd += ['-f', csv]
+		if filesets: cmd += ['-g', filesets]
+
+		# Run flrtvc in compact and verbose mode
 		stdout_c = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
 		stdout_v = subprocess.check_output(args=cmd+['-v'], stderr=subprocess.STDOUT)
+
+		# Save to variable ('0.report' value is used in run_parser func)
+		output.update({ '0.report': stdout_c.splitlines() })
+
+		# Save to file
+		if path:
+			stdout = stdout_c
+			if verbose: stdout = stdout_v
+			if not os.path.exists(path): os.makedirs(path)
+			with open(os.path.join(path, 'flrtvc_{}.txt'.format(machine)),'w') as f: f.write(stdout)
 	except subprocess.CalledProcessError as e:
-		logging.warn('EXCEPTION cmd={} rc={} output={}'.format(e.cmd, e.returncode, e.output))
-
-	# Save to variable ('flrtvc_c' value is used in run_parser func)
-	output.update({ 'flrtvc_report': stdout_c.splitlines() })
-
-	# Save to file
-	if path:
-		stdout = stdout_c
-		if verbose: stdout = stdout_v
-		if not os.path.exists(path): os.makedirs(path)
-		with open(os.path.join(path, 'flrtvc_{}.txt'.format(machine)),'w') as f: f.write(stdout)
+		logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, e.cmd, e.returncode, e.output))
+		output.update({ '0.report': [] })
+		module.exit_json(changed=False, msg='error executing flrtvc', meta=output)
 
 @start_threaded(thrds)
 @logged
@@ -240,7 +250,7 @@ def run_parser(machine, output, report):
 	reader_list = csv.DictReader(report, delimiter='|')
 	rows = [row['Download URL'] for row in reader_list if re.match(r'^(http|https|ftp)://(aix.software.ibm.com|public.dhe.ibm.com)/(aix/ifixes/.*?/|aix/efixes/security/.*?.tar)$', row['Download URL']) is not None]
 	rows = list(set(rows)) # remove duplicates
-	output.update({ 'extracted_urls': rows })
+	output.update({ '1.parse': rows })
 
 @start_threaded(thrds)
 @logged
@@ -252,20 +262,31 @@ def run_downloader(machine, output, urls):
 		output	(dict): The result of the command
 		urls	(list): The list of URLs to download
 	"""
-	out = { 'epkgs': [], 'epkgs_dl_ok': [], 'epkgs_ck_ok': [] }
+	out = { '2.discover': [], '3.download': [], '4.check': [] }
 	for url in urls:
 		protocol, srv, dir, name = re.search(r'^(.*?)://(.*?)/(.*)/(.*)$', url).groups()
-		logging.debug('protocol={}, srv={}, dir={}, name={}'.format(protocol, srv, dir, name))
+		logging.debug('{}: protocol={}, srv={}, dir={}, name={}'.format(machine, protocol, srv, dir, name))
 		if '.epkg.Z' in name:
 			################################
 			# URL as an efix file
 			################################
-			logging.debug('epkg.Z file NOT YET IMPLEMENTED')
+			logging.debug('{}: treat url as an epkg file'.format(machine))
+			out['2.discover'].extend(name)
+
+			# download epkg file
+			epkg = os.path.abspath(os.path.join(os.sep, name))
+			if download(url, epkg):
+				out['3.download'].extend(epkg)
+
+			# check prerequisite
+			if check_prereq(epkg, 'lslpp_{}.txt'.format(machine)):
+				out['4.check'].extend(epkg)
+
 		elif '.tar' in name:
 			################################
 			# URL as a tar file
 			################################
-			logging.debug('treat url as a tar file')
+			logging.debug('{}: treat url as a tar file'.format(machine))
 			dst = os.path.abspath(os.path.join(os.sep, name))
 
 			# download and open tar file
@@ -275,8 +296,8 @@ def run_downloader(machine, output, urls):
 			# find all epkg in tar file
 			pattern = re.compile(r'(\b[\w.-]+.epkg.Z\b)$')
 			epkgs = [epkg for epkg in t.getnames() if pattern.search(epkg)]
-			out['epkgs'].extend(epkgs)
-			logging.debug('found {} epkg.Z file in tar file'.format(len(epkgs)))
+			out['2.discover'].extend(epkgs)
+			logging.debug('{}: found {} epkg.Z file in tar file'.format(machine, len(epkgs)))
 
 			# extract epkg
 			tar_dir = 'outdir'
@@ -284,11 +305,11 @@ def run_downloader(machine, output, urls):
 			for epkg in epkgs:
 				t.extract(epkg, tar_dir)
 			epkgs = [os.path.abspath(os.path.join(os.sep, tar_dir, epkg)) for epkg in epkgs]
-			out['epkgs_dl_ok'].extend(epkgs)
+			out['3.download'].extend(epkgs)
 
 			# check prerequisite
 			epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine))]
-			out['epkgs_ck_ok'].extend(epkgs)
+			out['4.check'].extend(epkgs)
 		else:
 			################################
 			# URL as a Directory
@@ -296,21 +317,21 @@ def run_downloader(machine, output, urls):
 			context = ssl._create_unverified_context()
 			response = urllib.urlopen(url, context=context)
 			body = response.read()
-			logging.debug('treat url as a directory')
+			logging.debug('{}: treat url as a directory'.format(machine))
 
 			# find all epkg in html body
 			pattern = re.compile(r'(\b[\w.-]+.epkg.Z\b)')
 			epkgs = list(set([epkg for epkg in pattern.findall(body)]))
-			out['epkgs'].extend(epkgs)
-			logging.debug('found {} epkg.Z file in html body'.format(len(epkgs)))
+			out['2.discover'].extend(epkgs)
+			logging.debug('{}: found {} epkg.Z file in html body'.format(machine, len(epkgs)))
 
 			# download epkg
 			epkgs = [os.path.abspath(os.path.join(os.sep, epkg)) for epkg in epkgs if download(os.path.join(url, epkg), os.path.abspath(os.path.join(os.sep, epkg)))]
-			out['epkgs_dl_ok'].extend(epkgs)
+			out['3.download'].extend(epkgs)
 
 			# check prerequisite
 			epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine))]
-			out['epkgs_ck_ok'].extend(epkgs)
+			out['4.check'].extend(epkgs)
 	output.update(out)
 
 @start_threaded(thrds)
@@ -322,10 +343,10 @@ def run_installer(machine, output, epkgs):
 		machine (str): The remote machine name
 		output	(dict): The result of the command
 		epkgs	(list): The list of efixes to install
-		to      (str): The directory where efixes are stored
+		to		(str): The directory where efixes are stored
 	"""
 	if epkgs:
-		to = os.path.abspath(os.path.join(os.sep, 'flrtvc_lpp_source', 'emgr', 'ppc'))
+		to = os.path.abspath(os.path.join(os.sep, 'flrtvc_lpp_source', machine, 'emgr', 'ppc'))
 		# create lpp source location
 		if not os.path.exists(to): os.makedirs(to)
 		# copy efix to lpp source
@@ -335,24 +356,38 @@ def run_installer(machine, output, epkgs):
 		filesets = ' '.join(epkgs_base)
 		lpp_source = machine + '_lpp_source'
 
-		try:
-			# define lpp source
-			if subprocess.call(args=['/usr/sbin/lsnim', '-l', lpp_source]) > 0:
+		# define lpp source
+		if subprocess.call(args=['/usr/sbin/lsnim', '-l', lpp_source]) > 0:
+			try:
 				cmd = ['/usr/sbin/nim', '-o', 'define', '-t', 'lpp_source', '-a', 'server=master', '-a', 'location={}'.format(to), '-a', 'packages=all', lpp_source]
 				subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+			except subprocess.CalledProcessError as e:
+				logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, e.cmd, e.returncode, e.output))
 
-			# perform customization
-			cmd = '/usr/sbin/nim -o cust -a lpp_source={} -a filesets="{}" {}'.format(lpp_source, filesets, machine)
+		# perform customization
+		stdout = ''
+		try:
+			type = subprocess.check_output(args=['/usr/sbin/lsnim', machine], stderr=subprocess.STDOUT).split()[2]
+			if 'master' in type:
+				cmd = '/usr/sbin/geninstall -d {} {}'.format(to, filesets)
+			elif 'standalone' in type:
+				cmd = '/usr/sbin/nim -o cust -a lpp_source={} -a filesets="{}" {}'.format(lpp_source, filesets, machine)
+			elif 'vios' in type:
+				cmd = '/usr/sbin/nim -o updateios -a preview=no -a lpp_source={} {}'.format(lpp_source, machine)
 			stdout = subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
-			logging.debug('customization result is {}'.format(stdout))
-			output.update({ 'install': stdout.splitlines() })
-
-			# remove lpp source
-			cmd = ['/usr/sbin/nim', '-o', 'remove', lpp_source]
-			subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-
+			logging.debug('{}: customization result is {}'.format(machine, stdout))
 		except subprocess.CalledProcessError as e:
-			logging.warn('EXCEPTION cmd={} rc={} output={}'.format(e.cmd, e.returncode, e.output))
+			logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, e.cmd, e.returncode, e.output))
+			stdout = e.output
+		output.update({ '5.install': stdout.splitlines() })
+
+		# remove lpp source
+		if subprocess.call(args=['/usr/sbin/lsnim', '-l', lpp_source]) == 0:
+			try:
+				cmd = ['/usr/sbin/nim', '-o', 'remove', lpp_source]
+				subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+			except subprocess.CalledProcessError as e:
+				logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, e.cmd, e.returncode, e.output))
 
 @wait_threaded(thrds)
 def wait_all():
@@ -384,10 +419,33 @@ if __name__ == '__main__':
 	logging.debug('*** START ***')
 
 	# ===========================================
+	# Get client list
+	# ===========================================
+	logging.debug('*** OHAI ***')
+	stdout = ''
+	try:
+		cmd = ['lsnim', '-t', 'standalone']
+		stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+		cmd = ['lsnim', '-t', 'vios']
+		stdout += subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+	except subprocess.CalledProcessError as e:
+		logging.warn('EXCEPTION cmd={} rc={} output={}'.format(e.cmd, e.returncode, e.output))
+	nim_clients = [line.split()[0] for line in stdout.splitlines()]
+	nim_clients.append('master')
+	logging.debug(nim_clients)
+
+	# ===========================================
 	# Get module params
 	# ===========================================
+	logging.debug('*** INIT ***')
 	if module.params['targets']:
-		targets = re.split('[,\s]', module.params['targets'])
+		targets = re.split(r'[,\s]', module.params['targets'])
+		for m in targets:
+			if '*' in m:
+				# replace wildcard character by corresponding machines
+				i = targets.index(m)
+				targets[i:i+1] = re.findall(m.replace('*', r'.*?\b(?![\w-])'), ' '.join(nim_clients))
+		logging.debug(targets)
 	else: # empty targets
 		targets = ['master']
 
@@ -403,7 +461,7 @@ if __name__ == '__main__':
 	# metadata
 	output = {}
 	for m in targets: output[m] = {} # first time init
-	
+
 	# ===========================================
 	# Run flrtvc script
 	# ===========================================
@@ -417,14 +475,14 @@ if __name__ == '__main__':
 	# Parse flrtvc report
 	# ===========================================
 	logging.debug('*** PARSE ***')
-	for m in targets: run_parser(m, output[m], output[m]['flrtvc_report'])
+	for m in targets: run_parser(m, output[m], output[m]['0.report'])
 	else: wait_all()
 
 	# ===========================================
 	# Download and check efixes
 	# ===========================================
 	logging.debug('*** DOWNLOAD ***')
-	for m in targets: run_downloader(m, output[m], output[m]['extracted_urls'])
+	for m in targets: run_downloader(m, output[m], output[m]['1.parse'])
 	else: wait_all()
 
 	if download_only: module.exit_json(changed=False, msg='exit on download only', meta=output)
@@ -433,7 +491,7 @@ if __name__ == '__main__':
 	# Install efixes
 	# ===========================================
 	logging.debug('*** UPDATE ***')
-	for m in targets: run_installer(m, output[m], output[m]['epkgs_ck_ok'])
+	for m in targets: run_installer(m, output[m], output[m]['4.check'])
 	else: wait_all()
 
 	module.exit_json(changed=True, msg='exit successfully', meta=output)

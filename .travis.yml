@@ -7,20 +7,15 @@ python:
 install:
   - pip install ansible
   - pip install flake8
+  - pip install pylint
   - ansible --version
 
 # command to run tests
 script:
   # - flake8 . --show-source --max-line-length=120 --statistics --count -qq
+  - pylint library/*
+  - ansible-playbook playbook_aix_flrtvc.yml --syntax-check
   - ansible-playbook playbook_aix_suma_targets_all.yml --syntax-check
-  - ansible-playbook playbook_aix_suma_targets_all.yml -vvv
   - ansible-playbook playbook_aix_suma_targets_list.yml --syntax-check
-  - ansible-playbook playbook_aix_suma_targets_list.yml -vvv
   - ansible-playbook playbook_aix_suma_targets_range.yml --syntax-check
-  - ansible-playbook playbook_aix_suma_targets_range.yml -vvv
   - ansible-playbook playbook_aix_suma_targets_star.yml --syntax-check
-  - ansible-playbook playbook_aix_suma_targets_star.yml -vvv
-
-
-
-
