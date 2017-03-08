@@ -6,17 +6,14 @@ python:
 # command to install dependencies
 install:
   - pip install ansible
-  - pip install flake8
   - pip install pylint
+  - pip install flake8
   - ansible --version
 
 # command to run tests
 script:
-  # - flake8 . --show-source --max-line-length=120 --statistics --count -qq
-  - pylint library/aix_flrtvc.py
-  - flake8 library/aix_flrtvc.py
-  - ansible-playbook playbook_aix_flrtvc.yml --syntax-check
-  - ansible-playbook playbook_aix_suma_targets_all.yml --syntax-check
-  - ansible-playbook playbook_aix_suma_targets_list.yml --syntax-check
-  - ansible-playbook playbook_aix_suma_targets_range.yml --syntax-check
-  - ansible-playbook playbook_aix_suma_targets_star.yml --syntax-check
+  - pylint library/*
+  - flake8 library/*
+  # checking yaml syntax is not relevant since there are just examples.
+  #- ansible-playbook playbook_aix_flrtvc.yml --syntax-check
+  #- ansible-playbook playbook_aix_suma_targets_all.yml --syntax-check
