@@ -20,32 +20,13 @@
 
 Crates a task to automate the download of technology levels (TL) and service packs (SP) from a fix server.
 
-In file syma_list.yml:
+In the aix_syma module is:
 
-List: global config
 
+```yaml
+    aix_suma:
+      oslevel:  specify the OS level
+      location: specify the location
+      targets:  specify the target name
+      action:   specify to action to be performed
 ```
-- name: "SUMA List: global config"
-  suma:
-    operation: list
-    list_type: global_config
-```
-
-List: default task(s)
-
-```
-- name: "SUMA command: List default task"
-  suma:
-    operation: list
-    list_type: default_task
-```
-
-List: all tasks
-
-```
-- name: "SUMA command: List all tasks"
-  suma:
-    operation: list
-    list_type: list_task
-```
-
