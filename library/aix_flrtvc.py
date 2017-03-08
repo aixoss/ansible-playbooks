@@ -41,7 +41,8 @@ import urllib
 import ssl
 import shutil
 import tarfile
-
+# Ansible module 'boilerplate'
+from ansible.module_utils.basic import *
 
 # Threading
 THRDS = []
@@ -169,8 +170,8 @@ def check_prereq(epkg, ref):
                 (fileset, minlevel, maxlevel) = match.groups()
 
                 # ... extract current fileset level ...
-                with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as file:
-                    for line in file:
+                with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as myfile:
+                    for line in myfile:
                         if fileset in line:
                             curlevel = line.split(':')[2]
 
@@ -195,8 +196,8 @@ def run_lslpp(machine, filename):
         else:
             cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/bin/lslpp -Lcq']
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-        with open(filename, 'w') as file:
-            file.write(stdout)
+        with open(filename, 'w') as myfile:
+            myfile.write(stdout)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
 
@@ -214,24 +215,20 @@ def run_emgr(machine, filename):
         else:
             cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/sbin/emgr -lv3']
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-        with open(filename, 'w') as file:
-            file.write(stdout)
+        with open(filename, 'w') as myfile:
+            myfile.write(stdout)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
 
 @start_threaded(THRDS)
 @logged
-def run_flrtvc(machine, output, apar_type, apar_csv, filesets, dst_path, verbose):
+def run_flrtvc(machine, output, params):
     """
     Run command flrtvc on a target system
     args:
-        machine   (str): The remote machine name
-        output   (dict): The result of the command
-        apar_type (str): The type of apar (all, hiper , or sec)
-        apar_csv  (str): The name of the csv file
-        filesets  (str): The filesets to filter
-        dst_path  (str): The absolute path wher ethe report will be saved
-        verbose  (bool): if the report is in verbose or compact format
+        machine  (str): The remote machine name
+        output  (dict): The result of the command
+        params  (dict): The parameters to pass to flrtvc command
     """
     # Run 'lslpp -Lcq' on the remote machine and save to file
     lslpp_file = 'lslpp_{}.txt'.format(machine)
@@ -250,30 +247,26 @@ def run_flrtvc(machine, output, apar_type, apar_csv, filesets, dst_path, verbose
     try:
         # Prepare flrtvc command
         cmd = ['/usr/bin/flrtvc.ksh', '-e', emgr_file, '-l', lslpp_file]
-        if apar_type and apar_type != 'all':
-            cmd += ['-t', apar_type]
-        if apar_csv:
-            cmd += ['-f', apar_csv]
-        if filesets:
-            cmd += ['-g', filesets]
+        if params['apar_type'] and params['apar_type'] != 'all':
+            cmd += ['-t', params['apar_type']]
+        if params['apar_csv']:
+            cmd += ['-f', params['apar_csv']]
+        if params['filesets']:
+            cmd += ['-g', params['filesets']]
 
-        # Run flrtvc in compact and verbose mode
+        # Run flrtvc in compact mode
         stdout_c = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-        stdout_v = subprocess.check_output(args=cmd+['-v'], stderr=subprocess.STDOUT)
-
-        # Save to variable ('0.report' value is used in run_parser func)
         output.update({'0.report': stdout_c.splitlines()})
 
         # Save to file
         if dst_path:
-            stdout = stdout_c
-            if verbose:
-                stdout = stdout_v
             if not os.path.exists(dst_path):
                 os.makedirs(dst_path)
-            file = os.path.join(dst_path, 'flrtvc_{}.txt'.format(machine))
-            with open(file, 'w') as fl:
-                fl.write(stdout)
+            with open(os.path.join(dst_path, 'flrtvc_{}.txt'.format(machine)), 'w') as myfile:
+                if params['verbose']:
+					myfile.write(subprocess.check_output(args=cmd+['-v'], stderr=subprocess.STDOUT))
+				else:
+					myfile.write(stdout_c)				
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
         output.update({'0.report': []})
@@ -289,9 +282,9 @@ def run_parser(machine, output, report):
         output (dict): The result of the command
         report  (str): The compact report
     """
-    rows = csv.DictReader(report, delimiter='|')
+    dict_rows = csv.DictReader(report, delimiter='|')
     pattern = re.compile(r'^(http|https|ftp)://(aix.software.ibm.com|public.dhe.ibm.com)/(aix/ifixes/.*?/|aix/efixes/security/.*?.tar)$')
-    rows = [row['Download URL'] for row in rows if pattern.match(row['Download URL']) is not None]
+    rows = [row['Download URL'] for row in dict_rows if pattern.match(row['Download URL']) is not None]
     rows = list(set(rows)) # remove duplicates
     logging.debug('{}: extract {} urls in the report'.format(machine, len(rows)))
     output.update({'1.parse': rows})
@@ -359,14 +352,12 @@ def run_downloader(machine, output, urls):
             ################################
             # URL as a Directory
             ################################
-            context = ssl._create_unverified_context()
-            response = urllib.urlopen(url, context=context)
-            body = response.read()
             logging.debug('{}: treat url as a directory'.format(machine))
+            response = urllib.urlopen(url, context=ssl._create_unverified_context())
 
             # find all epkg in html body
-            pattern = re.compile(r'(\b[\w.-]+.epkg.Z\b)')
-            epkgs = list(set([epkg for epkg in pattern.findall(body)]))
+            epkgs = [epkg for epkg in re.findall(r'(\b[\w.-]+.epkg.Z\b)', response.read())]
+			epkgs = list(set(epkgs))
             out['2.discover'].extend(epkgs)
             logging.debug('{}: found {} epkg.Z file in html body'.format(machine, len(epkgs)))
 
@@ -413,8 +404,8 @@ def run_installer(machine, output, epkgs):
         # perform customization
         stdout = ''
         try:
-            cmd = ['/usr/sbin/lsnim', machine]
-            nimtype = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT).split()[2]
+            lsnim = subprocess.check_output(args=['/usr/sbin/lsnim', machine], stderr=subprocess.STDOUT)
+            nimtype = lsnim.split()[2]
             if 'master' in nimtype:
                 cmd = '/usr/sbin/geninstall -d {} {}'.format(destpath, filesets_list)
             elif 'standalone' in nimtype:
@@ -474,9 +465,6 @@ def expand_targets(targets, nim_clients):
 
 ###################################################################################################
 
-# Ansible module 'boilerplate'
-from ansible.module_utils.basic import *
-
 if __name__ == '__main__':
     MODULE = AnsibleModule(
         argument_spec=dict(targets=dict(required=True, type='str'),
@@ -510,11 +498,11 @@ if __name__ == '__main__':
     # ===========================================
     logging.debug('*** INIT ***')
     TARGETS = expand_targets(re.split(r'[,\s]', MODULE.params['targets']), NIM_CLIENTS)
-    APAR = MODULE.params['apar']
-    CSVFILE = MODULE.params['csv']
-    FILESETS = MODULE.params['filesets']
-    PATH = MODULE.params['path']
-    VERBOSE = MODULE.params['verbose']
+    FLRTVC_PARAMS = {'apar_type': MODULE.params['apar'],
+					'apar_csv':  MODULE.params['csv'],
+					'filesets':  MODULE.params['filesets'],
+					'dst_path':  MODULE.params['path'],
+					'verbose':   MODULE.params['verbose']}
     CLEAN = MODULE.params['clean']
     CHECK_ONLY = MODULE.params['check_only']
     DOWNLOAD_ONLY = MODULE.params['download_only']
@@ -529,7 +517,7 @@ if __name__ == '__main__':
     # ===========================================
     logging.debug('*** REPORT ***')
     for MACHINE in TARGETS:
-        run_flrtvc(MACHINE, OUTPUT[MACHINE], APAR, CSVFILE, FILESETS, PATH, VERBOSE)
+        run_flrtvc(MACHINE, OUTPUT[MACHINE], FLRTVC_PARAMS)
     wait_all()
 
     if CHECK_ONLY:
