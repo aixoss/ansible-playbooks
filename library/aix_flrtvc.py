@@ -35,17 +35,16 @@ import tarfile
 # Ansible module 'boilerplate'
 from ansible.module_utils.basic import *
 
-DOCUMENTATION = '''
----
+"""
 module: aix_flrtvc
 author: "Jerome Hurstel"
 version_added: "1.0.0"
 requirements: [ AIX ]
-
-'''
+"""
 
 # Threading
 THRDS = []
+
 
 def start_threaded(thds):
     """
@@ -66,6 +65,7 @@ def start_threaded(thds):
         return start_threaded_inner_wrapper
     return start_threaded_wrapper
 
+
 def wait_threaded(thds):
     """
     Decorator for thread join
@@ -84,6 +84,7 @@ def wait_threaded(thds):
         return wait_threaded_inner_wrapper
     return wait_threaded_wrapper
 
+
 def logged(func):
     """
     Decorator for logging
@@ -97,6 +98,7 @@ def logged(func):
         logging.debug('EXIT {} with {}'.format(func.__name__, res))
         return res
     return logged_wrapper
+
 
 @logged
 def download(src, dst):
@@ -118,6 +120,7 @@ def download(src, dst):
     else:
         logging.debug('{} already exists'.format(dst))
     return res
+
 
 @logged
 def check_prereq(epkg, ref):
@@ -161,6 +164,7 @@ def check_prereq(epkg, ref):
                             break
     return res
 
+
 @logged
 def run_lslpp(machine, filename):
     """
@@ -180,6 +184,7 @@ def run_lslpp(machine, filename):
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
 
+
 @logged
 def run_emgr(machine, filename):
     """
@@ -198,6 +203,7 @@ def run_emgr(machine, filename):
             myfile.write(stdout)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
+
 
 @start_threaded(THRDS)
 @logged
@@ -238,10 +244,10 @@ def run_flrtvc(machine, output, params):
         output.update({'0.report': stdout_c.splitlines()})
 
         # Save to file
-        if dst_path:
-            if not os.path.exists(dst_path):
-                os.makedirs(dst_path)
-            with open(os.path.join(dst_path, 'flrtvc_{}.txt'.format(machine)), 'w') as myfile:
+        if params['dst_path']:
+            if not os.path.exists(params['dst_path']):
+                os.makedirs(params['dst_path'])
+            with open(os.path.join(params['dst_path'], 'flrtvc_{}.txt'.format(machine)), 'w') as myfile:
                 if params['verbose']:
                     myfile.write(subprocess.check_output(args=cmd+['-v'], stderr=subprocess.STDOUT))
                 else:
@@ -250,6 +256,7 @@ def run_flrtvc(machine, output, params):
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
         output.update({'0.report': []})
         MODULE.exit_json(changed=False, msg='error executing flrtvc', meta=output)
+
 
 @start_threaded(THRDS)
 @logged
@@ -267,6 +274,7 @@ def run_parser(machine, output, report):
     rows = list(set(rows)) # remove duplicates
     logging.debug('{}: extract {} urls in the report'.format(machine, len(rows)))
     output.update({'1.parse': rows})
+
 
 @start_threaded(THRDS)
 @logged
@@ -310,8 +318,7 @@ def run_downloader(machine, output, urls):
             tar = tarfile.open(dst, 'r')
 
             # find all epkg in tar file
-            pattern = re.compile(r'(\b[\w.-]+.epkg.Z\b)$')
-            epkgs = [epkg for epkg in tar.getnames() if pattern.search(epkg)]
+            epkgs = [epkg for epkg in tar.getnames() if re.search(r'(\b[\w.-]+.epkg.Z\b)$', epkg)]
             out['2.discover'].extend(epkgs)
             logging.debug('{}: found {} epkg.Z file in tar file'.format(machine, len(epkgs)))
 
@@ -348,6 +355,7 @@ def run_downloader(machine, output, urls):
             epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine))]
             out['4.check'].extend(epkgs)
     output.update(out)
+
 
 @start_threaded(THRDS)
 @logged
@@ -401,10 +409,11 @@ def run_installer(machine, output, epkgs):
         # remove lpp source
         if subprocess.call(args=['/usr/sbin/lsnim', '-l', lpp_source]) == 0:
             try:
-                cmd = ['/usr/sbin/nim', '-o', 'remove', lpp_source]
-                subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+                cmd = '/usr/sbin/nim -o remove {}'.format(lpp_source)
+                subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as exc:
                 logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
+
 
 @wait_threaded(THRDS)
 def wait_all():
@@ -412,6 +421,7 @@ def wait_all():
     Do nothing
     """
     pass
+
 
 def client_list():
     """
@@ -429,6 +439,7 @@ def client_list():
     nim_clients.append('master')
     return nim_clients
 
+
 def expand_targets(targets, nim_clients):
     """
     Expand wildcard in target list
@@ -442,20 +453,23 @@ def expand_targets(targets, nim_clients):
     logging.debug(targets)
     return targets
 
+
 ###################################################################################################
+
 
 if __name__ == '__main__':
     MODULE = AnsibleModule(
-        argument_spec=dict(targets=dict(required=True, type='str'),
-                           apar=dict(required=False, choices=['sec', 'hiper', 'all', None], default=None),
-                           filesets=dict(required=False, type='str'),
-                           csv=dict(required=False, type='str'),
-                           path=dict(required=False, type='str'),
-                           verbose=dict(required=False, type='bool', default=False),
-                           clean=dict(required=False, type='bool', default=True),
-                           check_only=dict(required=False, type='bool', default=False),
-                           download_only=dict(required=False, type='bool', default=False),
-                          ),
+        argument_spec=dict(
+            targets=dict(required=True, type='str'),
+            apar=dict(required=False, choices=['sec', 'hiper', 'all', None], default=None),
+            filesets=dict(required=False, type='str'),
+            csv=dict(required=False, type='str'),
+            path=dict(required=False, type='str'),
+            verbose=dict(required=False, type='bool', default=False),
+            clean=dict(required=False, type='bool', default=True),
+            check_only=dict(required=False, type='bool', default=False),
+            download_only=dict(required=False, type='bool', default=False),
+        ),
         supports_check_mode=True
     )
 
