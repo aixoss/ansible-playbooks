@@ -22,15 +22,6 @@
 
 ######################################################################
 
-DOCUMENTATION = '''
----
-module: aix_flrtvc
-author: "Jerome Hurstel"
-version_added: "1.0.0"
-requirements: [ AIX ]
-
-'''
-
 import logging
 import os
 import re
@@ -43,6 +34,15 @@ import shutil
 import tarfile
 # Ansible module 'boilerplate'
 from ansible.module_utils.basic import *
+
+DOCUMENTATION = '''
+---
+module: aix_flrtvc
+author: "Jerome Hurstel"
+version_added: "1.0.0"
+requirements: [ AIX ]
+
+'''
 
 # Threading
 THRDS = []
@@ -114,31 +114,10 @@ def download(src, dst):
             subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
             logging.warn('EXCEPTION cmd={} rc={} output={}'.format(exc.cmd, exc.returncode, exc.output))
-            #if exc.returncode == 3:
-            #   subprocess.call(args=['/usr/sbin/chfs', '-a size=+100M', os.path.dirname(dst)])
-
             res = False
     else:
         logging.debug('{} already exists'.format(dst))
     return res
-
-    # context = ssl._create_unverified_context()
-    # filename = os.path.join(url, epkg)
-
-    # logging.debug('Downloading {} to {}...'.format(filename, epkg))
-    # try:
-        # response = urllib.urlopen(filename, context=context)
-    # except Exception as e:
-        # logging.debug('EXCEPTION {}'.format(e))
-    # logging.debug('DONE OPENING')
-    # with open(os.path.join(epkg), 'w') as f:
-        # while True:
-            # chunk = response.read(1024*16)
-            # if not chunk: break
-            # f.write(chunk)
-    # #urllib.urlretrieve(filename, epkg)
-    # logging.debug('DONE WRITING')
-    # return True
 
 @logged
 def check_prereq(epkg, ref):
@@ -264,9 +243,9 @@ def run_flrtvc(machine, output, params):
                 os.makedirs(dst_path)
             with open(os.path.join(dst_path, 'flrtvc_{}.txt'.format(machine)), 'w') as myfile:
                 if params['verbose']:
-					myfile.write(subprocess.check_output(args=cmd+['-v'], stderr=subprocess.STDOUT))
-				else:
-					myfile.write(stdout_c)				
+                    myfile.write(subprocess.check_output(args=cmd+['-v'], stderr=subprocess.STDOUT))
+                else:
+                    myfile.write(stdout_c)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
         output.update({'0.report': []})
@@ -357,7 +336,7 @@ def run_downloader(machine, output, urls):
 
             # find all epkg in html body
             epkgs = [epkg for epkg in re.findall(r'(\b[\w.-]+.epkg.Z\b)', response.read())]
-			epkgs = list(set(epkgs))
+            epkgs = list(set(epkgs))
             out['2.discover'].extend(epkgs)
             logging.debug('{}: found {} epkg.Z file in html body'.format(machine, len(epkgs)))
 
@@ -499,10 +478,10 @@ if __name__ == '__main__':
     logging.debug('*** INIT ***')
     TARGETS = expand_targets(re.split(r'[,\s]', MODULE.params['targets']), NIM_CLIENTS)
     FLRTVC_PARAMS = {'apar_type': MODULE.params['apar'],
-					'apar_csv':  MODULE.params['csv'],
-					'filesets':  MODULE.params['filesets'],
-					'dst_path':  MODULE.params['path'],
-					'verbose':   MODULE.params['verbose']}
+                     'apar_csv':  MODULE.params['csv'],
+                     'filesets':  MODULE.params['filesets'],
+                     'dst_path':  MODULE.params['path'],
+                     'verbose':   MODULE.params['verbose']}
     CLEAN = MODULE.params['clean']
     CHECK_ONLY = MODULE.params['check_only']
     DOWNLOAD_ONLY = MODULE.params['download_only']
