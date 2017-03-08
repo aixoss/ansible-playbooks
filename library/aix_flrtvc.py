@@ -58,10 +58,10 @@ def start_threaded(thds):
             """
             Decorator inner wrapper for thread start
             """
-            p = threading.Thread(target=func, args=(args))
+            thd = threading.Thread(target=func, args=(args))
             logging.debug('Start thread {}'.format(func.__name__))
-            p.start()
-            thds.append(p)
+            thd.start()
+            thds.append(thd)
         return start_threaded_inner_wrapper
     return start_threaded_wrapper
 
@@ -78,7 +78,8 @@ def wait_threaded(thds):
             Decorator inner wrapper for thread join
             """
             func(*args)
-            for p in thds: p.join()
+            for thd in thds:
+                thd.join()
         return wait_threaded_inner_wrapper
     return wait_threaded_wrapper
 
@@ -168,8 +169,8 @@ def check_prereq(epkg, ref):
                 (fileset, minlevel, maxlevel) = match.groups()
 
                 # ... extract current fileset level ...
-                with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as fl:
-                    for line in fl:
+                with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as file:
+                    for line in file:
                         if fileset in line:
                             curlevel = line.split(':')[2]
 
@@ -181,12 +182,12 @@ def check_prereq(epkg, ref):
     return res
 
 @logged
-def run_lslpp(machine, file):
+def run_lslpp(machine, filename):
     """
     Run command lslpp on a target system
     args:
-        machine (str): The remote machine name
-        file    (str): The filename to store stdout
+        machine  (str): The remote machine name
+        filename (str): The filename to store stdout
     """
     try:
         if 'master' in machine:
@@ -194,18 +195,18 @@ def run_lslpp(machine, file):
         else:
             cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/bin/lslpp -Lcq']
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-        with open(file, 'w') as fl:
-            fl.write(stdout)
+        with open(filename, 'w') as file:
+            file.write(stdout)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
 
 @logged
-def run_emgr(machine, file):
+def run_emgr(machine, filename):
     """
     Run command emgr on a target system
     args:
-        machine (str): The remote machine name
-        file    (str): The filename to store stdout
+        machine  (str): The remote machine name
+        filename (str): The filename to store stdout
     """
     try:
         if 'master' in machine:
@@ -213,46 +214,46 @@ def run_emgr(machine, file):
         else:
             cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/sbin/emgr -lv3']
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-        with open(file, 'w') as fl:
-            fl.write(stdout)
+        with open(filename, 'w') as file:
+            file.write(stdout)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
 
 @start_threaded(THRDS)
 @logged
-def run_flrtvc(machine, output, apar, csv, filesets, path, verbose):
+def run_flrtvc(machine, output, apar_type, apar_csv, filesets, dst_path, verbose):
     """
     Run command flrtvc on a target system
     args:
-        machine  (str): The remote machine name
+        machine   (str): The remote machine name
         output   (dict): The result of the command
-        apar     (str): The type of apar (all, hiper , or sec)
-        csv      (str): The name of the csv file
-        filesets (str): The filesets to filter
-        path     (str): The absolute path wher ethe report will be saved
+        apar_type (str): The type of apar (all, hiper , or sec)
+        apar_csv  (str): The name of the csv file
+        filesets  (str): The filesets to filter
+        dst_path  (str): The absolute path wher ethe report will be saved
         verbose  (bool): if the report is in verbose or compact format
     """
     # Run 'lslpp -Lcq' on the remote machine and save to file
     lslpp_file = 'lslpp_{}.txt'.format(machine)
-    p1 = threading.Thread(target=run_lslpp, args=(machine, lslpp_file))
-    p1.start()
+    thd1 = threading.Thread(target=run_lslpp, args=(machine, lslpp_file))
+    thd1.start()
 
     # Run 'emgr -lv3' on the remote machine and save to file
     emgr_file = 'emgr_{}.txt'.format(machine)
-    p2 = threading.Thread(target=run_emgr, args=(machine, emgr_file))
-    p2.start()
+    thd2 = threading.Thread(target=run_emgr, args=(machine, emgr_file))
+    thd2.start()
 
     # Wait threads to finish
-    p1.join()
-    p2.join()
+    thd1.join()
+    thd2.join()
 
     try:
         # Prepare flrtvc command
         cmd = ['/usr/bin/flrtvc.ksh', '-e', emgr_file, '-l', lslpp_file]
-        if apar and apar != 'all':
-            cmd += ['-t', apar]
-        if csv:
-            cmd += ['-f', csv]
+        if apar_type and apar_type != 'all':
+            cmd += ['-t', apar_type]
+        if apar_csv:
+            cmd += ['-f', apar_csv]
         if filesets:
             cmd += ['-g', filesets]
 
@@ -264,19 +265,19 @@ def run_flrtvc(machine, output, apar, csv, filesets, path, verbose):
         output.update({'0.report': stdout_c.splitlines()})
 
         # Save to file
-        if path:
+        if dst_path:
             stdout = stdout_c
             if verbose:
                 stdout = stdout_v
-            if not os.path.exists(path):
-                os.makedirs(path)
-            file = os.path.join(path, 'flrtvc_{}.txt'.format(machine))
+            if not os.path.exists(dst_path):
+                os.makedirs(dst_path)
+            file = os.path.join(dst_path, 'flrtvc_{}.txt'.format(machine))
             with open(file, 'w') as fl:
                 fl.write(stdout)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'.format(machine, exc.cmd, exc.returncode, exc.output))
         output.update({'0.report': []})
-        module.exit_json(changed=False, msg='error executing flrtvc', meta=output)
+        MODULE.exit_json(changed=False, msg='error executing flrtvc', meta=output)
 
 @start_threaded(THRDS)
 @logged
@@ -285,13 +286,14 @@ def run_parser(machine, output, report):
     Parse report by extracting URLs
     args:
         machine (str): The remote machine name
-        output  (dict): The result of the command
+        output (dict): The result of the command
         report  (str): The compact report
     """
     rows = csv.DictReader(report, delimiter='|')
     pattern = re.compile(r'^(http|https|ftp)://(aix.software.ibm.com|public.dhe.ibm.com)/(aix/ifixes/.*?/|aix/efixes/security/.*?.tar)$')
     rows = [row['Download URL'] for row in rows if pattern.match(row['Download URL']) is not None]
     rows = list(set(rows)) # remove duplicates
+    logging.debug('{}: extract {} urls in the report'.format(machine, len(rows)))
     output.update({'1.parse': rows})
 
 @start_threaded(THRDS)
@@ -301,13 +303,13 @@ def run_downloader(machine, output, urls):
     Download URLs and check efixes
     args:
         machine (str): The remote machine name
-        output  (dict): The result of the command
-        urls    (list): The list of URLs to download
+        output (dict): The result of the command
+        urls   (list): The list of URLs to download
     """
     out = {'2.discover': [], '3.download': [], '4.check': []}
     for url in urls:
-        protocol, srv, dir, name = re.search(r'^(.*?)://(.*?)/(.*)/(.*)$', url).groups()
-        logging.debug('{}: protocol={}, srv={}, dir={}, name={}'.format(machine, protocol, srv, dir, name))
+        protocol, srv, rep, name = re.search(r'^(.*?)://(.*?)/(.*)/(.*)$', url).groups()
+        logging.debug('{}: protocol={}, srv={}, rep={}, name={}'.format(machine, protocol, srv, rep, name))
         if '.epkg.Z' in name:
             ################################
             # URL as an efix file
@@ -333,11 +335,11 @@ def run_downloader(machine, output, urls):
 
             # download and open tar file
             download(url, dst)
-            t = tarfile.open(dst, 'r')
+            tar = tarfile.open(dst, 'r')
 
             # find all epkg in tar file
             pattern = re.compile(r'(\b[\w.-]+.epkg.Z\b)$')
-            epkgs = [epkg for epkg in t.getnames() if pattern.search(epkg)]
+            epkgs = [epkg for epkg in tar.getnames() if pattern.search(epkg)]
             out['2.discover'].extend(epkgs)
             logging.debug('{}: found {} epkg.Z file in tar file'.format(machine, len(epkgs)))
 
@@ -346,7 +348,7 @@ def run_downloader(machine, output, urls):
             if not os.path.exists(tar_dir):
                 os.makedirs(tar_dir)
             for epkg in epkgs:
-                t.extract(epkg, tar_dir)
+                tar.extract(epkg, tar_dir)
             epkgs = [os.path.abspath(os.path.join(os.sep, tar_dir, epkg)) for epkg in epkgs]
             out['3.download'].extend(epkgs)
 
@@ -384,8 +386,8 @@ def run_installer(machine, output, epkgs):
     Install epkgs efixes
     args:
         machine (str): The remote machine name
-        output  (dict): The result of the command
-        epkgs   (list): The list of efixes to install
+        output (dict): The result of the command
+        epkgs  (list): The list of efixes to install
     """
     if epkgs:
         destpath = os.path.abspath(os.path.join(os.sep, 'flrtvc_lpp_source', machine, 'emgr', 'ppc'))
@@ -412,12 +414,12 @@ def run_installer(machine, output, epkgs):
         stdout = ''
         try:
             cmd = ['/usr/sbin/lsnim', machine]
-            type = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT).split()[2]
-            if 'master' in type:
+            nimtype = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT).split()[2]
+            if 'master' in nimtype:
                 cmd = '/usr/sbin/geninstall -d {} {}'.format(destpath, filesets_list)
-            elif 'standalone' in type:
+            elif 'standalone' in nimtype:
                 cmd = '/usr/sbin/nim -o cust -a lpp_source={} -a filesets="{}" {}'.format(lpp_source, filesets_list, machine)
-            elif 'vios' in type:
+            elif 'vios' in nimtype:
                 cmd = '/usr/sbin/nim -o updateios -a preview=no -a lpp_source={} {}'.format(lpp_source, machine)
             stdout = subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
             logging.debug('{}: customization result is {}'.format(machine, stdout))
@@ -458,12 +460,15 @@ def client_list():
     return nim_clients
 
 def expand_targets(targets, nim_clients):
-    for m in targets:
-        if '*' in m:
+    """
+    Expand wildcard in target list
+    """
+    for machine in targets:
+        if '*' in machine:
             # replace wildcard character by corresponding machines
-            i = targets.index(m)
+            i = targets.index(machine)
             pattern = r'.*?\b(?![\w-])'
-            targets[i:i+1] = re.findall(m.replace('*', pattern), ' '.join(nim_clients))
+            targets[i:i+1] = re.findall(machine.replace('*', pattern), ' '.join(nim_clients))
     logging.debug(targets)
     return targets
 
@@ -516,43 +521,45 @@ if __name__ == '__main__':
 
     # metadata
     OUTPUT = {}
-    for m in TARGETS:
-        OUTPUT[m] = {} # first time init
+    for MACHINE in TARGETS:
+        OUTPUT[MACHINE] = {} # first time init
 
     # ===========================================
     # Run flrtvc script
     # ===========================================
     logging.debug('*** REPORT ***')
-    for m in TARGETS:
-        run_flrtvc(m, OUTPUT[m], APAR, CSVFILE, FILESETS, PATH, VERBOSE)
+    for MACHINE in TARGETS:
+        run_flrtvc(MACHINE, OUTPUT[MACHINE], APAR, CSVFILE, FILESETS, PATH, VERBOSE)
     wait_all()
 
-    if CHECK_ONLY: module.exit_json(changed=False, msg='exit on check only', meta=OUTPUT)
+    if CHECK_ONLY:
+        MODULE.exit_json(changed=False, msg='exit on check only', meta=OUTPUT)
 
     # ===========================================
     # Parse flrtvc report
     # ===========================================
     logging.debug('*** PARSE ***')
-    for m in TARGETS:
-        run_parser(m, OUTPUT[m], OUTPUT[m]['0.report'])
+    for MACHINE in TARGETS:
+        run_parser(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['0.report'])
     wait_all()
 
     # ===========================================
     # Download and check efixes
     # ===========================================
     logging.debug('*** DOWNLOAD ***')
-    for m in TARGETS:
-        run_downloader(m, OUTPUT[m], OUTPUT[m]['1.parse'])
+    for MACHINE in TARGETS:
+        run_downloader(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['1.parse'])
     wait_all()
 
-    if DOWNLOAD_ONLY: module.exit_json(changed=False, msg='exit on download only', meta=OUTPUT)
+    if DOWNLOAD_ONLY:
+        MODULE.exit_json(changed=False, msg='exit on download only', meta=OUTPUT)
 
     # ===========================================
     # Install efixes
     # ===========================================
     logging.debug('*** UPDATE ***')
-    for m in TARGETS:
-        run_installer(m, OUTPUT[m], OUTPUT[m]['4.check'])
+    for MACHINE in TARGETS:
+        run_installer(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['4.check'])
     wait_all()
 
-    module.exit_json(changed=True, msg='exit successfully', meta=OUTPUT)
+    MODULE.exit_json(changed=True, msg='exit successfully', meta=OUTPUT)
