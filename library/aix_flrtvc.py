@@ -117,7 +117,7 @@ def download(src, dst):
             subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
             logging.warn('EXCEPTION cmd={} rc={} output={}'
-                .format(exc.cmd, exc.returncode, exc.output))
+                         .format(exc.cmd, exc.returncode, exc.output))
             res = False
     else:
         logging.debug('{} already exists'.format(dst))
@@ -139,7 +139,7 @@ def check_prereq(epkg, ref):
         stdout = subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as exc:
         logging.warn('EXCEPTION cmd={} rc={} output={}'
-            .format(exc.cmd, exc.returncode, exc.output))
+                     .format(exc.cmd, exc.returncode, exc.output))
 
     res = False
     # For each prerequisites, ...
@@ -186,7 +186,7 @@ def run_lslpp(machine, filename):
             myfile.write(stdout)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-            .format(machine, exc.cmd, exc.returncode, exc.output))
+                     .format(machine, exc.cmd, exc.returncode, exc.output))
 
 
 @logged
@@ -207,7 +207,7 @@ def run_emgr(machine, filename):
             myfile.write(stdout)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-            .format(machine, exc.cmd, exc.returncode, exc.output))
+                     .format(machine, exc.cmd, exc.returncode, exc.output))
 
 
 @start_threaded(THRDS)
@@ -262,7 +262,7 @@ def run_flrtvc(machine, output, params):
                     myfile.write(stdout_c)
     except subprocess.CalledProcessError as exc:
         logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-            .format(machine, exc.cmd, exc.returncode, exc.output))
+                     .format(machine, exc.cmd, exc.returncode, exc.output))
         output.update({'0.report': []})
         MODULE.exit_json(changed=CHANGED, msg='error executing flrtvc', meta=output)
 
@@ -300,7 +300,7 @@ def run_downloader(machine, output, urls):
     for url in urls:
         protocol, srv, rep, name = re.search(r'^(.*?)://(.*?)/(.*)/(.*)$', url).groups()
         logging.debug('{}: protocol={}, srv={}, rep={}, name={}'
-            .format(machine, protocol, srv, rep, name))
+                      .format(machine, protocol, srv, rep, name))
         if '.epkg.Z' in name:
             ################################
             # URL as an efix file
@@ -379,6 +379,7 @@ def run_installer(machine, output, epkgs):
         output (dict): The result of the command
         epkgs  (list): The list of efixes to install
     """
+    global CHANGED
     if epkgs:
         destpath = os.path.abspath(os.path.join(os.sep))
         destpath = os.path.join(destpath, 'flrtvc_lpp_source', machine, 'emgr', 'ppc')
@@ -401,7 +402,7 @@ def run_installer(machine, output, epkgs):
                 subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as exc:
                 logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                    .format(machine, exc.cmd, exc.returncode, exc.output))
+                             .format(machine, exc.cmd, exc.returncode, exc.output))
 
         # perform customization
         stdout = ''
@@ -413,16 +414,16 @@ def run_installer(machine, output, epkgs):
                 cmd = '/usr/sbin/geninstall -d {} {}'.format(destpath, efixes)
             elif 'standalone' in nimtype:
                 cmd = '/usr/sbin/nim -o cust -a lpp_source={} -a filesets="{}" {}' \
-					.format(lpp_source, efixes, machine)
+                      .format(lpp_source, efixes, machine)
             elif 'vios' in nimtype:
                 cmd = '/usr/sbin/nim -o updateios -a preview=no -a lpp_source={} {}' \
-                    .format(lpp_source, machine)
+                      .format(lpp_source, machine)
             stdout = subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
             logging.debug('{}: customization result is {}'.format(machine, stdout))
             CHANGED = True
         except subprocess.CalledProcessError as exc:
             logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                .format(machine, exc.cmd, exc.returncode, exc.output))
+                         .format(machine, exc.cmd, exc.returncode, exc.output))
             stdout = exc.output
         output.update({'5.install': stdout.splitlines()})
 
@@ -433,7 +434,7 @@ def run_installer(machine, output, epkgs):
                 subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as exc:
                 logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                    .format(machine, exc.cmd, exc.returncode, exc.output))
+                             .format(machine, exc.cmd, exc.returncode, exc.output))
 
 
 @wait_threaded(THRDS)
@@ -456,7 +457,7 @@ def client_list():
         stdout += subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as exc:
         logging.warn('EXCEPTION cmd={} rc={} output={}'
-            .format(exc.cmd, exc.returncode, exc.output))
+                     .format(exc.cmd, exc.returncode, exc.output))
     nim_clients = [line.split()[0] for line in stdout.splitlines()]
     nim_clients.append('master')
     return nim_clients
