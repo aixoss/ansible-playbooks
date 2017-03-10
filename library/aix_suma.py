@@ -39,10 +39,8 @@ import subprocess
 import threading
 import logging
 
-debug_data = []
-params = {}
-nim_changed = False
-
+SUMA_OUTPUT = []
+PARAMS = {}
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
@@ -87,15 +85,21 @@ def max_oslevel(dic):
 def run_cmd(machine, result):
     """Run command function, command to be 'threaded'.
 
-    The thread then store the outpout in the dedicated slot of the result dictionnary.
+    The thread then store the outpout in the dedicated slot of the result
+    dictionnary.
 
     arguments:
         machine (str): The name machine
         result  (dict): The result of the command
     """
-    rsh_cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/bin/oslevel -s']
+    if machine == 'master':
+        cmd = ['/usr/bin/oslevel -s']
 
-    p = subprocess.Popen(rsh_cmd,
+    else:
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
+               '/usr/bin/oslevel -s']
+
+    p = subprocess.Popen(cmd,
                         shell=False,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE)
@@ -105,18 +109,26 @@ def run_cmd(machine, result):
 
 
 # ----------------------------------------------------------------
-# Expand the target machine list parameter
-#
-#    "*" should be specified as target to apply an operation on all
-#        the machines
-#    If target parameter is empty or not present operation is
-#        performed locally
-#
-#    raise InvalidTargetsProperty in case of error
-#    - cannot contact the target machines
 # ----------------------------------------------------------------
 def expand_targets(targets_list, nim_clients):
+    """Expand the list of the targets.
 
+    a taget name could be of the following form:
+        target*       all the nim client machines whose name starts
+                          with 'target'
+        target[n1:n2] where n1 and n2 are numeric: target<n1> to target<n2>
+        * or ALL      all the nim client machines
+        client_name   the nim client named 'client_name'
+        master        the nim master
+
+        sample:  target[1:5] target12 other_target*
+
+    arguments:
+        machine (str): The name machine
+        result  (dict): The result of the command
+
+    return: the list of the existing machines matching the target list
+    """
     clients = []
 
     for target in targets_list:
@@ -124,7 +136,6 @@ def expand_targets(targets_list, nim_clients):
         # -----------------------------------------------------------
         # Build target(s) from: range i.e. quimby[7:12]
         # -----------------------------------------------------------
-
         m = re.match(r"(\w+)\[(\d+):(\d+)\]", target)
         if m:
 
@@ -143,7 +154,6 @@ def expand_targets(targets_list, nim_clients):
         # -----------------------------------------------------------
         # Build target(s) from: val*. i.e. quimby*
         # -----------------------------------------------------------
-
         m = re.match(r"(\w+)\*$", target)
         if m:
 
@@ -158,7 +168,6 @@ def expand_targets(targets_list, nim_clients):
         # -----------------------------------------------------------
         # Build target(s) from: all or *
         # -----------------------------------------------------------
-
         if target.upper() == 'ALL' or target == '*':
             clients = nim_clients
             continue
@@ -166,16 +175,58 @@ def expand_targets(targets_list, nim_clients):
         # -----------------------------------------------------------
         # Build target(s) from: quimby05 quimby08 quimby12
         # -----------------------------------------------------------
-
-        clients.append(target)
+        if (target in nim_clients) or (target == 'master'):
+            clients.append(target)
 
     return list(set(clients))
 
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
+def exec_cmd(cmd):
+    """Execute a command.
+
+    arguments:
+        cmd (str): The command to be executed
+
+    return:
+        ret code: 0 - OK
+                  1 - CalledProcessError exception
+                  2 - other exception
+        std_out of the command or stderr in case of error
+    """
+
+    std_out = ''
+    std_err = ''
+    msg = ''
+
+    logging.debug('exec command:{}'.format(cmd))
+    try:
+        std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+    except subprocess.CalledProcessError as e:
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'.format(
+                                             cmd, e.cmd, e.output, e.returncode)
+        return 1, msg
+    except Exception as e:
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'.format(
+                                             cmd, e.args, std_out, std_err)
+        return 2, msg
+
+    logging.debug('exec command Error:{}'.format(std_err))
+    logging.debug('exec command output:{}'.format(std_out))
+
+    return 0, std_out
+
+
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
 def get_nim_clients():
-    """Get the list of the standalones defined on the nim master."""
+    """
+    Get the list of the standalones defined on the nim master.
+
+    return the list of the name of the standlone objects defined on the
+           nim master.
+    """
     std_out = ''
     std_err = ''
     clients_list = []
@@ -183,10 +234,12 @@ def get_nim_clients():
     cmd = ['lsnim', '-t', 'standalone']
 
     try:
-        p = subprocess.Popen(cmd, shell=False, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        p = subprocess.Popen(cmd, shell=False, stdin=None,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (std_out, std_err) = p.communicate()
     except Exception as e:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'.format(cmd, e.args, std_out, std_err)
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'.format(
+                                              cmd, e.args, std_out, std_err)
         module.fail_json(msg=msg)
 
     # nim_clients list
@@ -198,51 +251,28 @@ def get_nim_clients():
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def exec_cmd(cmd):
-
-    std_out = ''
-    std_err = ''
-
-    logging.debug('exec command:{}'.format(cmd))
-    try:
-        std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-    except subprocess.CalledProcessError as e:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'.format(cmd, e.cmd, e.output, e.returncode)
-        module.fail_json(msg=msg)
-    except Exception as e:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'.format(cmd, e.args, std_out, std_err)
-        module.fail_json(msg=msg)
-
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('exec command:{}'.format(cmd))
-    debug_data.append('exec command Error:{}'.format(std_err))
-    logging.debug('exec command Error:{}'.format(std_err))
-    logging.debug('exec command output:{}'.format(std_out))
-    # --------------------------------------------------------
-
-    return std_out
-
-
-# ----------------------------------------------------------------
-# ----------------------------------------------------------------
 def get_nim_lpp_source():
-    """Get the list of the lpp_source defined on the nim master."""
+    """Get the list of the lpp_source defined on the nim master.
+
+    arguments:
+        None
+
+    return:
+        ret code: 0 - OK
+                  1 - CalledProcessError exception
+                  2 - other exception
+        std_out of the command or stderr in case of error
+    """
     std_out = ''
     # std_err = ''
     lpp_source_list = {}
 
     cmd = ['lsnim', '-t', 'lpp_source', '-l']
 
-#    try:
-#        p = subprocess.Popen(cmd, shell=False, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#        (std_out, std_err) = p.communicate()
-#    except Exception as e:
-#        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'.format(cmd, e.args, std_out, std_err)
-#        module.fail_json(msg=msg)
+    rc, std_out = exec_cmd(cmd)
 
-    std_out = exec_cmd(cmd)
+    if rc != 0:
+        return rc, std_out
 
     # lpp_source list
     for line in std_out.rstrip().split('\n'):
@@ -255,9 +285,11 @@ def get_nim_lpp_source():
                 loc = match_loc.group(1)
                 lpp_source_list[obj_key] = loc
 
-    return lpp_source_list
+    return 0, lpp_source_list
 
 
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
 def compute_rq_type(oslevel):
     """Compute rq_type.
 
@@ -267,10 +299,10 @@ def compute_rq_type(oslevel):
         Latest when oslevel is blank or latest (not case sensitive)
         TL     when oslevel is xxxx-xx(-00-0000)
         SP     when oslevel is xxxx-xx-xx(-xxxx)
-
-    raise Error in case of error
+        ERROR  when oslevel is not recognized
     """
-    if (oslevel is None) or (not oslevel.strip()) or (oslevel.upper() == 'LATEST'):
+    if (oslevel is None) or (not oslevel.strip()) or \
+                            (oslevel.upper() == 'LATEST'):
         return 'Latest'
     if re.match(r"^([0-9]{4}-[0-9]{2})(|-00|-00-0000)$", oslevel):
         return 'TL'
@@ -279,63 +311,80 @@ def compute_rq_type(oslevel):
 
     logging.debug("Error: oslevel is not recognized")
 
-    raise Exception("Error: oslevel is not recognized")
+    return 'ERROOR'
 
 
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
 def compute_rq_name(rq_type, oslevel, clients_oslevel):
     """Compute rq_name.
 
     Compute the suma rq_name
-        - for Latest: return
-        - for TL: return the TL value in the forme xxxx-xx-00-0000
-        - for SP: <PJPJ> TO BE UPDATED
+        - for Latest: return a SP value in the form xxxx-xx-xx-xxxx
+        - for TL: return the TL value in the form xxxx-xx-00-0000
+        - for SP: return the SP value in the form xxxx-xx-xx-xxxx
+
+    arguments:
+        rq_type
+        oslevel          requested oslevel
+        clients_oslevel  oslevel of each client
+
     return:
-       rq_name value
+       return code : 0 - OK
+                     1 - CalledProcessError exception
+                     2 - other exception
+       rq_name value or stderr in case of error
     """
-    metadata_dir = "/tmp/ansible/metadata"  # <TODO> get an env variable for that
+    metadata_dir = "/tmp/ansible/metadata"  # <TODO> get env variable for that
     rq_name = ''
     if rq_type == 'Latest':
-        oslevel_max = re.match(r"^([0-9]{4}-[0-9]{2})(|-[0-9]{2}|-[0-9]{2}-[0-9]{4})$", max_oslevel(clients_oslevel)).group(1)
-        oslevel_min = re.match(r"^([0-9]{4}-[0-9]{2})(|-[0-9]{2}|-[0-9]{2}-[0-9]{4})$", min_oslevel(clients_oslevel)).group(1)
+        oslevel_max = re.match(
+                       r"^([0-9]{4}-[0-9]{2})(|-[0-9]{2}|-[0-9]{2}-[0-9]{4})$",
+                       max_oslevel(clients_oslevel)).group(1)
+        oslevel_min = re.match(
+                       r"^([0-9]{4}-[0-9]{2})(|-[0-9]{2}|-[0-9]{2}-[0-9]{4})$",
+                       min_oslevel(clients_oslevel)).group(1)
 
         if re.match(r"^([0-9]{4})", oslevel_min).group(1) != \
            re.match(r"^([0-9]{4})", oslevel_max).group(1):
-            debug_data.append("Error: Release level mismatch, only AIX {} SP/TL will be downloaded\n\n".format(oslevel_max[0:2]))
-            logging.warning("Error: Release level mismatch, only AIX {} SP/TL will be downloaded\n\n".format(oslevel_max[0:2]))
+            logging.warning("Error: Release level mismatch, " \
+                            "only AIX {} SP/TL will be downloaded\n\n". \
+                            format(oslevel_max[0:2]))
 
         metadata_filter_ml = oslevel_max
 
         if not metadata_filter_ml:
-            logging.error("Error: cannot discover filter ml based on the list of targets")
-            raise Exception("Error: cannot discover filter ml based on the list of targets")
+            logging.error(
+                "Error: cannot discover filter ml based on the list of targets")
+            raise Exception(
+                "Error: cannot discover filter ml based on the list of targets")
 
-#        cmd = ['/bin/mkdir', '-p', metadata_dir]
-#        std_out = exec_cmd(cmd)
         if not os.path.exists(metadata_dir):
             os.makedirs(metadata_dir)
 
-        # ==========================================================================
         # Build suma command to get metadata
-        # ==========================================================================
         suma_filterml = 'FilterML={}'.format(metadata_filter_ml)
         suma_dltarget = 'DLTarget={}'.format(metadata_dir)
-        suma_display = 'DisplayName={}'.format(params['Description'])
+        suma_display = 'DisplayName={}'.format(PARAMS['Description'])
 
         cmd = ['/usr/sbin/suma', '-x', '-a', 'Action=Metadata', \
                '-a', 'RqType=Latest', '-a', suma_filterml, \
                '-a', suma_dltarget, '-a', suma_display]
 
-        stdout = exec_cmd(cmd)
+        logging.debug('SUMA command:{}'.format(cmd))
 
-        #########################################################
-        # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-        #########################################################
-        debug_data.append('suma command:{}'.format(cmd))
-        # -------------------------------------------------------
+        rc, stdout = exec_cmd(cmd)
+        if rc != 0:
+            logging.error(
+                'SUMA command error rc:{}, error: {}'.format(rc, stdout))
+            return rc, std_out
+
+        logging.debug('SUMA command rc:{}'.format(rc))
 
         # find latest SP for highest TL
         v_max = None
-        file_name = metadata_dir + "/installp/ppc/" + metadata_filter_ml + "*.xml"
+        file_name = metadata_dir + "/installp/ppc/" + \
+                    metadata_filter_ml + "*.xml"
         logging.debug("searched files: {}".format(file_name))
         files = glob.glob(file_name)
         logging.debug("found files: {}".format(files))
@@ -344,7 +393,9 @@ def compute_rq_name(rq_type, oslevel, clients_oslevel):
             fd = open(file, "r")
             for line in fd:
                 logging.debug("line: {}".format(line))
-                match_item = re.match(r"^<SP name=\"([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4})\">$", line)
+                match_item = re.match(
+                    r"^<SP name=\"([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4})\">$",
+                    line)
                 if match_item:
                     version = match_item.group(1)
                     if v_max is None or version > v_max:
@@ -355,43 +406,45 @@ def compute_rq_name(rq_type, oslevel, clients_oslevel):
         shutil.rmtree(metadata_dir)
 
     elif rq_type == 'TL':
-        rq_name = re.match(r"^([0-9]{4}-[0-9]{2})(|-00|-00-0000)$", oslevel).group(1) + "-00-0000"
+        rq_name = re.match(r"^([0-9]{4}-[0-9]{2})(|-00|-00-0000)$",
+                           oslevel).group(1) + "-00-0000"
 
     elif rq_type == 'SP':
         if re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}$", oslevel):
             rq_name = oslevel
         elif re.match(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$", oslevel):
-            metadata_filter_ml = re.match(r"^([0-9]{4}-[0-9]{2})-[0-9]{2}$", oslevel).group(1)
+            metadata_filter_ml = re.match(r"^([0-9]{4}-[0-9]{2})-[0-9]{2}$",
+                                          oslevel).group(1)
 
-#            cmd = ['/bin/mkdir', '-p', metadata_dir]
-#            std_out = exec_cmd(cmd)
             if not os.path.exists(metadata_dir):
                 os.makedirs(metadata_dir)
 
-            # ==========================================================================
+            # ==================================================================
             # Build suma command to get metadata
-            # ==========================================================================
+            # ==================================================================
             suma_filterml = 'FilterML={}'.format(metadata_filter_ml)
             suma_dltarget = 'DLTarget={}'.format(metadata_dir)
-            suma_display = 'DisplayName={}'.format(params['Description'])
+            suma_display = 'DisplayName={}'.format(PARAMS['Description'])
 
             cmd = ['/usr/sbin/suma', '-x', '-a', 'Action=Metadata', \
                    '-a', 'RqType=Latest', '-a', suma_filterml, \
                    '-a', suma_dltarget, '-a', suma_display]
 
-            stdout = exec_cmd(cmd)
+            logging.debug('suma command:{}'.format(cmd))
 
-            #########################################################
-            # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-            #########################################################
-            debug_data.append('suma command:{}'.format(cmd))
-            # -------------------------------------------------------
+            rc, stdout = exec_cmd(cmd)
+            if rc != 0:
+                logging.error('SUMA command error rc:{}, error: {}'. \
+                              format(rc, stdout))
+                return rc, std_out
 
             # find SP build number
             file = metadata_dir + "/installp/ppc/" + oslevel + ".xml"
             fd = open(file, "r")
             for line in fd:
-                match_item = re.match(r"^<SP name=\"([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4})\">$", line)
+                match_item = re.match(
+                       r"^<SP name=\"([0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4})\">$",
+                       line)
                 if match_item:
                     version = match_item.group(1)
                     break
@@ -399,15 +452,25 @@ def compute_rq_name(rq_type, oslevel, clients_oslevel):
             rq_name = version
             shutil.rmtree(metadata_dir)
 
-    return rq_name
+    return 0, rq_name
 
 
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
 def compute_filter_ml(clients_oslevel, rq_type):
-    """Compute filter_ml."""
+    """Compute the suma filter ML.
+
+    returns the filter ML value for the suma command, depending on the
+    oslevel of the target clients
+    i.e. the minimum oslevel of the target for a specified rq_type.
+    For a rq_type equals to latest it corresponds to the minimum oslevel of
+    the target machines at the highest version (xxxx.OO.OO.OOO)
+    """
     minimum_oslevel = None
 
     if rq_type == 'Latest':
-        vers_max = re.match(r"^([0-9]{4})", max_oslevel(clients_oslevel)).group(1)
+        vers_max = re.match(r"^([0-9]{4})",
+                            max_oslevel(clients_oslevel)).group(1)
 
         for key, value in iter(clients_oslevel.items()):
             if re.match(r"^([0-9]{4})", value).group(1) == vers_max and \
@@ -421,8 +484,17 @@ def compute_filter_ml(clients_oslevel, rq_type):
     return minimum_oslevel
 
 
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
 def compute_lpp_source_name(location, rq_name):
-    """Compute lpp source name based on the location."""
+    """Compute lpp source name based on the location.
+
+    When no location is specified or the location is a path the
+        lpp_source_name is the <rq_name>-lpp-source
+    else le lpp_source_name is the location value
+
+    return: the name of the lpp_source
+    """
     loc = ''
     if not location or not location.strip() or location[0] == '/':
         loc = "{}-lpp_source".format(rq_name)
@@ -434,8 +506,24 @@ def compute_lpp_source_name(location, rq_name):
     return loc
 
 
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
 def compute_dl_target(location, lpp_source, nim_lpp_sources):
-    """Compute suma DL target based on lpp source name."""
+    """Compute suma DL target based on lpp source name.
+
+     When the location is empty, set the location path to
+         /usr/sys/inst.images
+     Check if a lpp_source nim resource already exist and check the path is
+         the same
+     When the location is not a path, check that a nim lpp_source corresponding
+         to the location value exists and returns the location path of this
+         nim ressource.
+
+    return:
+       return code : 0 - OK
+                     1 - if error
+       dl_target value or msg in case of error
+    """
     if not location or not location.strip():
         loc = "/usr/sys/inst.images"
     else:
@@ -445,14 +533,86 @@ def compute_dl_target(location, lpp_source, nim_lpp_sources):
         dl_target = "{}/{}".format(loc, lpp_source)
         if (lpp_source in nim_lpp_sources) and \
            (nim_lpp_sources[lpp_source] != dl_target):
-            raise Exception("Error: lpp source location mismatch")
+            return 1, "Error: lpp source location mismatch"
     else:
         if (loc not in nim_lpp_sources):
-            raise Exception("Error: cannot find lpp_source {} from nim info".format(loc))
+            return 1, "Error: cannot find lpp_source {} from nim info". \
+                      format(loc)
 
         dl_target = nim_lpp_sources[loc]
 
-    return dl_target
+    return 0, dl_target
+
+
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
+def suma_command(module, action):
+    """run a suma command.
+
+    parameters
+        action   preview or download
+
+    return:
+       ret     suma command return code
+       stdout  suma command output
+    """
+    suma_cmd = '/usr/sbin/suma -x -a RqType=SP '
+    suma_action = '-a Action={} '.format(action)
+    suma_filterml = '-a FilterML={} '.format(PARAMS['FilterMl'])
+    suma_dltarget = '-a DLTarget={} '.format(PARAMS['DLTarget'])
+    suma_rqname = '-a RqName={} '.format(PARAMS['RqName'])
+    suma_display = '-a DisplayName={} '.format(PARAMS['Description'])
+
+    suma_params = ''.join((suma_cmd, suma_action, suma_rqname, suma_filterml,
+                           suma_dltarget, suma_display))
+
+    logging.debug('SUMA - Command:{}'.format(suma_params))
+    SUMA_OUTPUT.append('SUMA - Command:{}'.format(suma_params))
+
+    ret, stdout, stderr = module.run_command(suma_params)
+
+    if ret != 0:
+        logging.error("Error: suma {} command failed with return code {}".\
+                      format(action, ret))
+        module.fail_json(msg="SUMA Command: {} => Error :{}". \
+                         format(suma_params, stderr.split('\n')))
+
+    return ret, stdout
+
+
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
+def nim_command(module):
+    """run a nim -o define command
+
+    parameters
+        action
+
+    return:
+       ret     nim command return code
+       stdout  nim command output
+    """
+    nim_cmd = '/usr/sbin/nim  -o define  -t lpp_source  -a server=master '
+    nim_location = '-a location={} '.format(PARAMS['DLTarget'])
+    nim_package = '-a packages=all {} '.format(PARAMS['LppSource'])
+
+    nim_params = ''.join((nim_cmd, nim_location, nim_package))
+
+    logging.info('NIM - Command:{}'.format(nim_params))
+    SUMA_OUTPUT.append('NIM command:{}'.format(nim_params))
+
+
+    ret, stdout, stderr = module.run_command(nim_params)
+
+    if ret != 0:
+        logging.error("NIM Command: {}".format(nim_params))
+        logging.error("NIM operation failed - rc:{}".format(rc))
+        logging.error("{}".format(stderr))
+        SUMA_OUTPUT.append('NIM operation failed - rc:{}'.format(rc))
+        module.fail_json(msg="NIM Master Command: {} => Error :{}". \
+                         format(nim_params, stderr.split('\n')))
+
+    return ret, stdout
 
 
 # ----------------------------------------------------------------
@@ -465,15 +625,19 @@ def main():
             oslevel=dict(required=True, type='str'),
             location=dict(required=False, type='str'),
             targets=dict(required=True, type='str'),
-            action=dict(choices=['download', 'preview'], type='str'),
+            action=dict(required=False,
+                        choices=['download', 'preview'],
+                        type='str', default='preview'),
             description=dict(required=False, type='str'),
 
         ),
         supports_check_mode=True
     )
 
-    # Open log file <TODO> - to be changed
-    logging.basicConfig(filename='/tmp/ansibletest.log', level=logging.DEBUG)
+    # Open log file - <TODO> - get file name from env
+    SUMA_CHANGED = False
+    logging.basicConfig(filename='/tmp/ansible_suma_debug.log', format='[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s', level=logging.DEBUG)
+    logging.debug('*** START ***')
 
     # Get Module params
     if module.params['oslevel']:
@@ -484,8 +648,6 @@ def main():
     location = ''
     if module.params['location']:
         location = module.params['location']
-    # else:
-    #     raise Exception("Error: Location field is empty")
 
     if module.params['targets']:
         targets = module.params['targets']
@@ -503,20 +665,22 @@ def main():
         description = "{} request for oslevel {}".format(action, req_oslevel)
 
 
-    params['Description'] = description
+    PARAMS['Description'] = description
 
     # ==========================================================================
     # build nim lpp_source list
     # ==========================================================================
     nim_lpp_sources = {}
-    nim_lpp_sources = get_nim_lpp_source()
+    rc, nim_lpp_sources = get_nim_lpp_source()
+    if rc != 0:
+        logging.error(
+                'SUMA Error getting the lpp_source list - rc:{}, error:{}'. \
+                format(rc, nim_lpp_sources))
+        module.fail_json(
+                msg="SUMA Error getting th lpp_source list - rc:{}, error:{}". \
+                format(rc, nim_lpp_sources))
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('lpp source list: {}'.format(nim_lpp_sources))
     logging.debug('lpp source list: {}'.format(nim_lpp_sources))
-    # -------------------------------------------------------
 
     # ===========================================
     # Build nim_clients list
@@ -524,188 +688,128 @@ def main():
     nim_clients = []
     nim_clients = get_nim_clients()
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('NIM Clients: {}'.format(nim_clients))
     logging.debug('NIM Clients: {}'.format(nim_clients))
-    # -------------------------------------------------------
 
+    # ===========================================
     # Build targets list
+    # ===========================================
     targets_list = targets.split(' ')
-
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('Targets List: {}'.format(targets_list))
-    logging.debug('Targets List: {}'.format(targets_list))
-    # -------------------------------------------------------
-
     target_clients = []
     target_clients = expand_targets(targets_list, nim_clients)
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('Target Clients: {}'.format(target_clients))
-    logging.debug('Target Clients: {}'.format(target_clients))
-    # -------------------------------------------------------
+    logging.info('SUMA - Target list: {}'.format(target_clients))
+    SUMA_OUTPUT.append('SUMA - Target list: {}'.format(target_clients))
 
     # ==========================================================================
     # Launch threads to collect information on targeted nim clients
     # ==========================================================================
-
     threads = []
     clients_oslevel = {}
 
     for machine in target_clients:
-        process = threading.Thread(target=run_cmd, args=(machine, clients_oslevel))
+        process = threading.Thread(target=run_cmd,
+                                   args=(machine, clients_oslevel))
         process.start()
         threads.append(process)
 
     for process in threads:
         process.join()
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('oslevel unclean dict: {}'.format(clients_oslevel))
     logging.debug('oslevel unclean dict: {}'.format(clients_oslevel))
-    # -------------------------------------------------------
 
     # ==========================================================================
     # Delete empty value of dictionnary
     # ==========================================================================
-
     removed_oslevel = []
 
     for key in [k for (k, v) in clients_oslevel.items() if not v]:
         removed_oslevel.append(key)
         del clients_oslevel[key]
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('oslevel cleaned dict: {}'.format(clients_oslevel))
-    debug_data.append('unavailable client list: {}'.format(removed_oslevel))
     logging.debug('oslevel cleaned dict: {}'.format(clients_oslevel))
-    logging.debug('unavailable client list: {}'.format(removed_oslevel))
+    logging.warn('SUMA - unavailable client list: {}'.format(removed_oslevel))
 
+    # ==========================================================================
     # compute suma request type based on oslevel property
+    # ==========================================================================
     rq_type = compute_rq_type(req_oslevel)
-    params['RqType'] = rq_type
+    if rq_type == 'ERROR':
+        logging.error('SUMA Error computing the request type: {}'. \
+                      format(req_oslevel))
+        module.fail_json(msg='SUMA Error computing the request type: {}'. \
+                         format(req_oslevel))
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('Suma req Type: {}'.format(rq_type))
+    PARAMS['RqType'] = rq_type
+
     logging.debug('Suma req Type: {}'.format(rq_type))
-    # -------------------------------------------------------
 
     # ==========================================================================
-    # Compute the filter_ml i.e. the min oslevel of the target clients
+    # Compute the filter_ml i.e. the min oslevel from the clients_oslevel
     # ==========================================================================
-
-    # Min oslevel from the clients_oslevel
     filter_ml = compute_filter_ml(clients_oslevel, rq_type)
-    params['FilterMl'] = filter_ml
+    PARAMS['FilterMl'] = filter_ml
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('{} <= Min Oslevel'.format(filter_ml))
+    # <DEBUG> - debug_data.append('{} <= Min Oslevel'.format(filter_ml))
     logging.debug('{} <= Min Oslevel'.format(filter_ml))
-    # -------------------------------------------------------
 
+    # ==========================================================================
     # compute suma request name based on metadata info
-    rq_name = compute_rq_name(rq_type, req_oslevel, clients_oslevel)
-    params['RqName'] = rq_name
+    # ==========================================================================
+    rc, rq_name = compute_rq_name(rq_type, req_oslevel, clients_oslevel)
+    if rc != 0:
+        logging.error('SUMA Error compute_rq_name - rc:{}, error:{}'. \
+                      format(rc, nim_lpp_sources))
+        module.fail_json(msg="SUMA Error compute_rq_name - rc:{}, error:{}". \
+                         format(rc, nim_lpp_sources))
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('Suma req Name: {}'.format(rq_name))
+    PARAMS['RqName'] = rq_name
+
     logging.debug('Suma req Name: {}'.format(rq_name))
-    # -------------------------------------------------------
 
+    # ==========================================================================
     # metadata does not match any fixes
+    # ==========================================================================
     if not rq_name or not rq_name.strip():
-        logging.error("Error: SUMA oslevel {} doesn't match any fixes".format(oslevel))
-        module.fail_json(msg="SUMA oslevel {} doesn't match any fixes".format(oslevel))
-        # raise Exception("Error: oslevel doesn't match any fixes")
-        # <PJPJ> - TO BE CONFIRMED
+        logging.error("SUMA - Error: oslevel {} doesn't match any fixes".\
+                      format(oslevel))
+        module.fail_json(msg="SUMA - Error:oslevel {} doesn't match any fixes".\
+                         format(oslevel))
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('Suma req Name: {}'.format(rq_name))
     logging.debug('Suma req Name: {}'.format(rq_name))
-    # -------------------------------------------------------
 
+    # ==========================================================================
     # compute lpp source name based on request name
+    # ==========================================================================
     lpp_source = compute_lpp_source_name(location, rq_name)
-    params['LppSource'] = lpp_source
+    PARAMS['LppSource'] = lpp_source
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('Lpp source name: {}'.format(lpp_source))
     logging.debug('Lpp source name: {}'.format(lpp_source))
-    # -------------------------------------------------------
 
+    # ==========================================================================
     # compute suma dl target based on lpp source name
-    dl_target = compute_dl_target(location, lpp_source, nim_lpp_sources)
-    params['DLTarget'] = dl_target
+    # ==========================================================================
+    rc, dl_target = compute_dl_target(location, lpp_source, nim_lpp_sources)
+    if rc != 0:
+        logging.error('SUMA Error compute_dl_target - {}'.format(dl_target))
+        module.fail_json(msg='SUMA Error compute_dl_target - {}'. \
+                         format(dl_target))
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('DL target: {}'.format(dl_target))
+    PARAMS['DLTarget'] = dl_target
+
     logging.debug('DL target: {}'.format(dl_target))
-    # -------------------------------------------------------
 
     # ==========================================================================
-    # Make dir
+    # Make lpp_source_dir = '/usr/sys/inst.images/{}-lpp_source'.format(rq_name)
     # ==========================================================================
-
-    # lpp_source_dir = '/usr/sys/inst.images/{}-lpp_source'.format(rq_name)
     if not os.path.exists(dl_target):
         os.makedirs(dl_target)
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('mkdir command:{}'.format(dl_target))
     logging.debug('mkdir command:{}'.format(dl_target))
-    # -------------------------------------------------------
 
     # ==========================================================================
-    # Build suma command for preview
+    # suma command for preview
     # ==========================================================================
-    suma_cmd = '/usr/sbin/suma -x '
-    suma_rqtype = '-a RqType=SP '
-    suma_filterml = '-a FilterML={} '.format(filter_ml)
-    suma_dltarget = '-a DLTarget={} '.format(dl_target)
-    suma_rqname = '-a RqName={} '.format(rq_name)
-    suma_action = '-a Action=Preview '
-    suma_display = '-a DisplayName={} '.format('description')
-
-    # suma_params = ''.join((suma_cmd, suma_action, suma_rqtype, suma_rqname, suma_filterml, suma_dltarget, suma_display))
-    suma_params = ''.join((suma_cmd, suma_action, suma_rqtype, suma_rqname, suma_filterml, suma_dltarget))
-
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
-    debug_data.append('suma command:{}'.format(suma_params))
-    logging.debug('suma command:{}'.format(suma_params))
-    # -------------------------------------------------------
-
-    rc, stdout, stderr = module.run_command(suma_params)
-
-    if rc != 0:
-        logging.error("Error: suma preview command failed with return code {}".format(rc))
-        module.fail_json(msg="SUMA Command: {} => Error :{}".format(suma_params, stderr.split('\n')))
-
+    ret, stdout = suma_command(module, 'Preview')
     logging.debug('suma preview stdout:{}'.format(stdout))
 
     # parse output to see if there is something to download
@@ -726,7 +830,11 @@ def main():
         if matched:
             skipped = int(matched.group(1))
 
-    logging.info('Preview summary : {} to download, {} failed, {} skipped'.format(downloaded, failed, skipped))
+    logging.info('Preview summary : {} to download, {} failed, {} skipped'. \
+                 format(downloaded, failed, skipped))
+    SUMA_OUTPUT.append(
+                'Preview summary : {} to download, {} failed, {} skipped'. \
+                format(downloaded, failed, skipped))
 
     # ==========================================================================
     # If action is preview or nothing is available to download, we are done
@@ -735,38 +843,13 @@ def main():
     if action == 'download':
         if downloaded != 0:
 
-            # ==========================================================================
-            # Build suma command for download
-            # ==========================================================================
-            suma_cmd = '/usr/sbin/suma -x '
-            suma_rqtype = '-a RqType=SP '
-            suma_filterml = '-a FilterML={} '.format(filter_ml)
-            suma_dltarget = '-a DLTarget={} '.format(dl_target)
-            suma_rqname = '-a RqName={} '.format(rq_name)
-            suma_action = '-a Action=Download '
-            suma_display = '-a DisplayName={} '.format('description')
-
-            # suma_params = ''.join((suma_cmd, suma_action, suma_rqtype, suma_rqname, suma_filterml, suma_dltarget, suma_display))
-            suma_params = ''.join((suma_cmd, suma_action, suma_rqtype, suma_rqname, suma_filterml, suma_dltarget))
-
-            #########################################################
-            # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-            #########################################################
-            debug_data.append('suma command:{}'.format(suma_params))
-            logging.debug('suma command:{}'.format(suma_params))
-            # -------------------------------------------------------
-
-            rc, stdout, stderr = module.run_command(suma_params)
-
-            if rc != 0:
-                logging.error("Error: suma dowload command failed with return code {}".format(rc))
-                logging.error("{}".format(stderr))
-                module.fail_json(msg="SUMA Command: {} => Error :{}".format(suma_params, stderr.split('\n')))
-
+            # ==================================================================
+            # suma command for download
+            # ==================================================================
+            ret, stdout = suma_command(module, 'Download')
             logging.debug('suma dowload stdout:{}'.format(stdout))
-            debug_data.append('suma command output:{}'.format(stdout))
 
-            # parse output to see if there is something to download
+            # parse output to see if there is something downloaded
             downloaded = 0
             failed = 0
             skipped = 0
@@ -784,60 +867,48 @@ def main():
                 if matched:
                     skipped = int(matched.group(1))
 
-            logging.info('Download summary : {} downloaded, {} failed, {} skipped'.format(downloaded, failed, skipped))
-            debug_data.append('Download summary : {} downloaded, {} failed, {} skipped'.format(downloaded, failed, skipped))
+            logging.info(
+                  'Download summary : {} downloaded, {} failed, {} skipped'. \
+                  format(downloaded, failed, skipped))
+            SUMA_OUTPUT.append(
+                  'Download summary : {} downloaded, {} failed, {} skipped'. \
+                  format(downloaded, failed, skipped))
+
+            if downloaded != 0:
+                SUMA_CHANGED = True
 
             if failed != 0:
                 logging.error('Suma download failed')
-                debug_data.append('Suma download failed')
-                module.fail_json(msg="SUMA Command: {} => Error :{}".format(suma_params, stderr.split('\n')))
+                module.fail_json(msg="SUMA Command: {} => Error :{}". \
+                                 format(suma_params, stderr.split('\n')))
 
-        # ==========================================================================
+        # ======================================================================
         # Create the associated nim resource if necessary
-        # ==========================================================================
+        # ======================================================================
         if lpp_source not in nim_lpp_sources:
 
-            # ==========================================================================
-            # Build nim command
-            # ==========================================================================
-            nim_cmd = '/usr/sbin/nim '
-            nim_operation = '-o define '
-            nim_type = '-t lpp_source '
-            nim_location = '-a location={} '.format(dl_target)
-            nim_server = '-a server=master '
-            nim_package = '-a packages=all {} '.format(lpp_source)
+            # ==================================================================
+            # nim -o define command
+            # ==================================================================
+            ret, stdout = nim_command(module)
 
-            nim_params = ''.join((nim_cmd, nim_operation, nim_type, nim_location, nim_server, nim_package))
+            SUMA_CHANGED = True
 
-            #########################################################
-            # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-            #########################################################
-            debug_data.append('nim command:{}'.format(nim_params))
-            logging.debug('nim command:{}'.format(nim_params))
-            # -------------------------------------------------------
-
-            rc, stdout, stderr = module.run_command(nim_params)
-
-            if rc != 0:
-                logging.error("Error: nim -o define failed with return code {}".format(rc))
-                logging.error("NIM Command: {}".format(nim_params))
-                logging.error("{}".format(stderr))
-                module.fail_json(msg="NIM Master Command: {} => Error :{}".format(nim_params, stderr.split('\n')))
-
-            logging.debug('nim -o define stdout:{}'.format(stdout))
-            debug_data.append('nim -o define output:{}'.format(stdout))
+            logging.info('NIM operation succeeded - output:{}'.format(stdout))
+            SUMA_OUTPUT.append('NIM operation succeeded - output:{}'. \
+                               format(stdout))
 
     # ==========================================================================
     # Exit
     # ==========================================================================
     module.exit_json(
-        changed = True,
+        changed = SUMA_CHANGED,
         msg="Suma {} completed successfully".format(action),
-        debug_res = debug_data,
+        suma_output = SUMA_OUTPUT,
         lpp_source_name = lpp_source,
         target_list = target_clients)
 
-###########################################################################################################
+################################################################################
 
 # Ansible module 'boilerplate'
 from ansible.module_utils.basic import *
