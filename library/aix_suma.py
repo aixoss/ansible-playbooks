@@ -40,6 +40,7 @@ requirements: [ AIX ]
 SUMA_OUTPUT = []
 PARAMS = {}
 
+
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def min_oslevel(dic):
@@ -470,7 +471,7 @@ def compute_filter_ml(clients_oslevel, rq_type):
 
         for key, value in iter(clients_oslevel.items()):
             if re.match(r"^([0-9]{4})", value).group(1) == vers_max and \
-               (minimum_oslevel is None or value < min_oslevel):
+               (minimum_oslevel is None or value < minimum_oslevel):
                 minimum_oslevel = value
     else:
         minimum_oslevel = min_oslevel(clients_oslevel)
@@ -543,7 +544,7 @@ def compute_dl_target(location, lpp_source, nim_lpp_sources):
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def suma_command(module, action):
-    """run a suma command.
+    """Run a suma command.
 
     parameters
         action   preview or download
@@ -568,7 +569,7 @@ def suma_command(module, action):
     ret, stdout, stderr = module.run_command(suma_params)
 
     if ret != 0:
-        logging.error("Error: suma {} command failed with return code {}".\
+        logging.error("Error: suma {} command failed with return code {}". \
                       format(action, ret))
         module.fail_json(msg="SUMA Command: {} => Error :{}". \
                          format(suma_params, stderr.split('\n')))
@@ -579,7 +580,7 @@ def suma_command(module, action):
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def nim_command(module):
-    """run a nim -o define command
+    """Run a nim -o define command
 
     parameters
         action
