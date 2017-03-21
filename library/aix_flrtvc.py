@@ -32,6 +32,8 @@ import urllib
 import ssl
 import shutil
 import tarfile
+import zipfile
+import stat
 # Ansible module 'boilerplate'
 from ansible.module_utils.basic import *
 
@@ -122,6 +124,12 @@ def download(src, dst):
     else:
         logging.debug('{} already exists'.format(dst))
     return res
+
+
+@logged
+def unzip(src, dst):
+    zfile = zipfile.ZipFile(src)
+    zfile.extractall(dst)
 
 
 @logged
@@ -360,7 +368,7 @@ def run_downloader(machine, output, urls):
 
             # download epkg
             epkgs = [os.path.abspath(os.path.join(os.sep, epkg)) for epkg in epkgs
-                if download(os.path.join(url, epkg), os.path.abspath(os.path.join(os.sep, epkg)))]
+                     if download(os.path.join(url, epkg), os.path.abspath(os.path.join(os.sep, epkg)))]
             out['3.download'].extend(epkgs)
 
             # check prerequisite
@@ -529,6 +537,20 @@ if __name__ == '__main__':
     OUTPUT = {}
     for MACHINE in TARGETS:
         OUTPUT[MACHINE] = {}  # first time init
+
+    # ===========================================
+    # Install flrtvc script
+    # ===========================================
+    logging.debug('*** INSTALL ***')
+    flrtvcpath = os.path.abspath(os.path.join(os.sep, 'usr', 'bin'))
+    flrtvcfile = os.path.join(flrtvcpath, 'flrtvc.ksh')
+    if not os.path.exists(flrtvcfile):
+        destname = os.path.abspath(os.path.join(os.sep, 'FLRTVC-latest.zip'))
+        download('https://www-304.ibm.com/webapp/set2/sas/f/flrt3/FLRTVC-latest.zip', destname)
+        unzip(destname, os.path.abspath(os.path.join(os.sep, 'usr', 'bin')))
+    st = os.stat(flrtvcfile)
+    if not st.st_mode & stat.S_IEXEC:
+        os.chmod(flrtvcfile, st.st_mode | stat.S_IEXEC)
 
     # ===========================================
     # Run flrtvc script
