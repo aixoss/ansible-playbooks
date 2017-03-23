@@ -121,6 +121,10 @@ def download(src, dst):
             logging.warn('EXCEPTION cmd={} rc={} output={}'
                          .format(exc.cmd, exc.returncode, exc.output))
             res = False
+            if exc.returncode is 3:
+                increase_fs(dst)
+                os.remove(dst)
+                download(src, dst)
     else:
         logging.debug('{} already exists'.format(dst))
     return res
@@ -128,8 +132,13 @@ def download(src, dst):
 
 @logged
 def unzip(src, dst):
-    zfile = zipfile.ZipFile(src)
-    zfile.extractall(dst)
+    try:
+        zfile = zipfile.ZipFile(src)
+        zfile.extractall(dst)
+    except StandardException as exc:
+        logging.warn('EXCEPTION {}'.format(exc))
+        increase_fs(dst)
+        unzip(src, dst)
 
 
 @logged
@@ -346,7 +355,12 @@ def run_downloader(machine, output, urls):
             if not os.path.exists(tar_dir):
                 os.makedirs(tar_dir)
             for epkg in epkgs:
-                tar.extract(epkg, tar_dir)
+                try:
+                    tar.extract(epkg, tar_dir)
+                except StandardException as exc:
+                    logging.warn('EXCEPTION {}'.format(exc))
+                    increase_fs(tar_dir)
+                    tar.extract(epkg, tar_dir)
             epkgs = [os.path.abspath(os.path.join(os.sep, tar_dir, epkg)) for epkg in epkgs]
             out['3.download'].extend(epkgs)
 
@@ -396,7 +410,12 @@ def run_installer(machine, output, epkgs):
             os.makedirs(destpath)
         # copy efix destpath lpp source
         for epkg in epkgs:
-            shutil.copy(epkg, destpath)
+            try:
+                shutil.copy(epkg, destpath)
+            except StandardException as exc:
+                logging.warn('EXCEPTION {}'.format(exc))
+                increase_fs(destpath)
+                shutil.copy(epkg, destpath)
         epkgs_base = [os.path.basename(epkg) for epkg in epkgs]
 
         efixes = ' '.join(epkgs_base)
@@ -483,6 +502,22 @@ def expand_targets(targets, nim_clients):
             targets[i:i+1] = re.findall(machine.replace('*', pattern), ' '.join(nim_clients))
     logging.debug(targets)
     return targets
+
+
+def increase_fs(dest):
+    """
+    Increase filesystem by 100Mb
+    """
+    try:
+        cmd = ['df', '-c', dest]
+        stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        mount_point = stdout.splitlines()[1].split(':')[6]
+        cmd = ['chfs', '-a', 'size=+100M', mount_point]
+        stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        logging.debug('{}: {}'.format(mount_point, stdout))
+    except subprocess.CalledProcessError as exc:
+        logging.warn('EXCEPTION cmd={} rc={} output={}'
+                     .format(exc.cmd, exc.returncode, exc.output))
 
 
 ###################################################################################################
