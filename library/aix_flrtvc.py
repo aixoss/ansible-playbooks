@@ -135,10 +135,36 @@ def unzip(src, dst):
     try:
         zfile = zipfile.ZipFile(src)
         zfile.extractall(dst)
-    except StandardException as exc:
+    except Exception as exc:
         logging.warn('EXCEPTION {}'.format(exc))
         increase_fs(dst)
         unzip(src, dst)
+
+
+@logged
+def locked_fileset(machine, fileset):
+    try:
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, ' {}'.format(fileset)]
+        logging.debug(' '.join(cmd))
+        stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        logging.debug('{}: command result is {}'.format(machine, stdout))
+    except subprocess.CalledProcessError as exc:
+        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
+                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        stdout = exc.output
+
+
+@logged
+def remove_efix(machine, label):
+    try:
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/sbin/emgr -r -L {}'.format(label)]
+        logging.debug(' '.join(cmd))
+        stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        logging.debug('{}: command result is {}'.format(machine, stdout))
+    except subprocess.CalledProcessError as exc:
+        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
+                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        stdout = exc.output
 
 
 @logged
@@ -170,6 +196,15 @@ def check_prereq(epkg, ref):
             match = re.match(r'^(.*?)\s+(.*?)\s+(.*?)$', line)
             if match is not None:
                 (fileset, minlvl, maxlvl) = match.groups()
+
+                # ... check if fileset is locked ...
+                if locked_fileset():
+                    if force:
+                        # ... automatically remove efixes
+                        remove_efix(machine, label)
+                    else:
+                        # ... reject fileset from list
+                        break
 
                 # ... extract current fileset level ...
                 with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as myfile:
@@ -357,7 +392,7 @@ def run_downloader(machine, output, urls):
             for epkg in epkgs:
                 try:
                     tar.extract(epkg, tar_dir)
-                except StandardException as exc:
+                except Exception as exc:
                     logging.warn('EXCEPTION {}'.format(exc))
                     increase_fs(tar_dir)
                     tar.extract(epkg, tar_dir)
@@ -393,7 +428,7 @@ def run_downloader(machine, output, urls):
 
 @start_threaded(THRDS)
 @logged
-def run_installer(machine, output, epkgs):
+def run_installer(machine, output, epkgs, force):
     """
     Install epkgs efixes
     args:
@@ -412,7 +447,7 @@ def run_installer(machine, output, epkgs):
         for epkg in epkgs:
             try:
                 shutil.copy(epkg, destpath)
-            except StandardException as exc:
+            except Exception as exc:
                 logging.warn('EXCEPTION {}'.format(exc))
                 increase_fs(destpath)
                 shutil.copy(epkg, destpath)
@@ -532,13 +567,14 @@ if __name__ == '__main__':
             csv=dict(required=False, type='str'),
             path=dict(required=False, type='str'),
             verbose=dict(required=False, type='bool', default=False),
+            force=dict(required=False, type='bool', default=False),
             clean=dict(required=False, type='bool', default=True),
             check_only=dict(required=False, type='bool', default=False),
             download_only=dict(required=False, type='bool', default=False),
         ),
         supports_check_mode=True
     )
-
+    
     CHANGED = False
 
     # Logging
@@ -564,6 +600,7 @@ if __name__ == '__main__':
                      'filesets':  MODULE.params['filesets'],
                      'dst_path':  MODULE.params['path'],
                      'verbose':   MODULE.params['verbose']}
+    FORCE = MODULE.params['force']
     CLEAN = MODULE.params['clean']
     CHECK_ONLY = MODULE.params['check_only']
     DOWNLOAD_ONLY = MODULE.params['download_only']
@@ -622,7 +659,7 @@ if __name__ == '__main__':
     # ===========================================
     logging.debug('*** UPDATE ***')
     for MACHINE in TARGETS:
-        run_installer(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['4.check'])
+        run_installer(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['4.check'], FORCE)
     wait_all()
 
     MODULE.exit_json(changed=CHANGED, msg='exit successfully', meta=OUTPUT)
