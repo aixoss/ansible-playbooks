@@ -32,6 +32,8 @@ import urllib
 import ssl
 import shutil
 import tarfile
+import zipfile
+import stat
 # Ansible module 'boilerplate'
 from ansible.module_utils.basic import *
 
@@ -119,9 +121,50 @@ def download(src, dst):
             logging.warn('EXCEPTION cmd={} rc={} output={}'
                          .format(exc.cmd, exc.returncode, exc.output))
             res = False
+            if exc.returncode is 3:
+                increase_fs(dst)
+                os.remove(dst)
+                download(src, dst)
     else:
         logging.debug('{} already exists'.format(dst))
     return res
+
+
+@logged
+def unzip(src, dst):
+    try:
+        zfile = zipfile.ZipFile(src)
+        zfile.extractall(dst)
+    except Exception as exc:
+        logging.warn('EXCEPTION {}'.format(exc))
+        increase_fs(dst)
+        unzip(src, dst)
+
+
+@logged
+def locked_fileset(machine, fileset):
+    try:
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, ' {}'.format(fileset)]
+        logging.debug(' '.join(cmd))
+        stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        logging.debug('{}: command result is {}'.format(machine, stdout))
+    except subprocess.CalledProcessError as exc:
+        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
+                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        stdout = exc.output
+
+
+@logged
+def remove_efix(machine, label):
+    try:
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/sbin/emgr -r -L {}'.format(label)]
+        logging.debug(' '.join(cmd))
+        stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        logging.debug('{}: command result is {}'.format(machine, stdout))
+    except subprocess.CalledProcessError as exc:
+        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
+                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        stdout = exc.output
 
 
 @logged
@@ -153,6 +196,15 @@ def check_prereq(epkg, ref):
             match = re.match(r'^(.*?)\s+(.*?)\s+(.*?)$', line)
             if match is not None:
                 (fileset, minlvl, maxlvl) = match.groups()
+
+                # ... check if fileset is locked ...
+                if locked_fileset():
+                    if force:
+                        # ... automatically remove efixes
+                        remove_efix(machine, label)
+                    else:
+                        # ... reject fileset from list
+                        break
 
                 # ... extract current fileset level ...
                 with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as myfile:
@@ -338,7 +390,12 @@ def run_downloader(machine, output, urls):
             if not os.path.exists(tar_dir):
                 os.makedirs(tar_dir)
             for epkg in epkgs:
-                tar.extract(epkg, tar_dir)
+                try:
+                    tar.extract(epkg, tar_dir)
+                except Exception as exc:
+                    logging.warn('EXCEPTION {}'.format(exc))
+                    increase_fs(tar_dir)
+                    tar.extract(epkg, tar_dir)
             epkgs = [os.path.abspath(os.path.join(os.sep, tar_dir, epkg)) for epkg in epkgs]
             out['3.download'].extend(epkgs)
 
@@ -360,7 +417,7 @@ def run_downloader(machine, output, urls):
 
             # download epkg
             epkgs = [os.path.abspath(os.path.join(os.sep, epkg)) for epkg in epkgs
-                if download(os.path.join(url, epkg), os.path.abspath(os.path.join(os.sep, epkg)))]
+                     if download(os.path.join(url, epkg), os.path.abspath(os.path.join(os.sep, epkg)))]
             out['3.download'].extend(epkgs)
 
             # check prerequisite
@@ -371,7 +428,7 @@ def run_downloader(machine, output, urls):
 
 @start_threaded(THRDS)
 @logged
-def run_installer(machine, output, epkgs):
+def run_installer(machine, output, epkgs, force):
     """
     Install epkgs efixes
     args:
@@ -388,7 +445,12 @@ def run_installer(machine, output, epkgs):
             os.makedirs(destpath)
         # copy efix destpath lpp source
         for epkg in epkgs:
-            shutil.copy(epkg, destpath)
+            try:
+                shutil.copy(epkg, destpath)
+            except Exception as exc:
+                logging.warn('EXCEPTION {}'.format(exc))
+                increase_fs(destpath)
+                shutil.copy(epkg, destpath)
         epkgs_base = [os.path.basename(epkg) for epkg in epkgs]
 
         efixes = ' '.join(epkgs_base)
@@ -477,6 +539,22 @@ def expand_targets(targets, nim_clients):
     return targets
 
 
+def increase_fs(dest):
+    """
+    Increase filesystem by 100Mb
+    """
+    try:
+        cmd = ['df', '-c', dest]
+        stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        mount_point = stdout.splitlines()[1].split(':')[6]
+        cmd = ['chfs', '-a', 'size=+100M', mount_point]
+        stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        logging.debug('{}: {}'.format(mount_point, stdout))
+    except subprocess.CalledProcessError as exc:
+        logging.warn('EXCEPTION cmd={} rc={} output={}'
+                     .format(exc.cmd, exc.returncode, exc.output))
+
+
 ###################################################################################################
 
 
@@ -489,13 +567,14 @@ if __name__ == '__main__':
             csv=dict(required=False, type='str'),
             path=dict(required=False, type='str'),
             verbose=dict(required=False, type='bool', default=False),
+            force=dict(required=False, type='bool', default=False),
             clean=dict(required=False, type='bool', default=True),
             check_only=dict(required=False, type='bool', default=False),
             download_only=dict(required=False, type='bool', default=False),
         ),
         supports_check_mode=True
     )
-
+    
     CHANGED = False
 
     # Logging
@@ -521,6 +600,7 @@ if __name__ == '__main__':
                      'filesets':  MODULE.params['filesets'],
                      'dst_path':  MODULE.params['path'],
                      'verbose':   MODULE.params['verbose']}
+    FORCE = MODULE.params['force']
     CLEAN = MODULE.params['clean']
     CHECK_ONLY = MODULE.params['check_only']
     DOWNLOAD_ONLY = MODULE.params['download_only']
@@ -529,6 +609,20 @@ if __name__ == '__main__':
     OUTPUT = {}
     for MACHINE in TARGETS:
         OUTPUT[MACHINE] = {}  # first time init
+
+    # ===========================================
+    # Install flrtvc script
+    # ===========================================
+    logging.debug('*** INSTALL ***')
+    flrtvcpath = os.path.abspath(os.path.join(os.sep, 'usr', 'bin'))
+    flrtvcfile = os.path.join(flrtvcpath, 'flrtvc.ksh')
+    if not os.path.exists(flrtvcfile):
+        destname = os.path.abspath(os.path.join(os.sep, 'FLRTVC-latest.zip'))
+        download('https://www-304.ibm.com/webapp/set2/sas/f/flrt3/FLRTVC-latest.zip', destname)
+        unzip(destname, os.path.abspath(os.path.join(os.sep, 'usr', 'bin')))
+    st = os.stat(flrtvcfile)
+    if not st.st_mode & stat.S_IEXEC:
+        os.chmod(flrtvcfile, st.st_mode | stat.S_IEXEC)
 
     # ===========================================
     # Run flrtvc script
@@ -565,7 +659,7 @@ if __name__ == '__main__':
     # ===========================================
     logging.debug('*** UPDATE ***')
     for MACHINE in TARGETS:
-        run_installer(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['4.check'])
+        run_installer(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['4.check'], FORCE)
     wait_all()
 
     MODULE.exit_json(changed=CHANGED, msg='exit successfully', meta=OUTPUT)
