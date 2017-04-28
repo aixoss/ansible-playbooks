@@ -29,8 +29,12 @@ import shutil
 import subprocess
 import threading
 import logging
+# Ansible module 'boilerplate'
+from ansible.module_utils.basic import *
 
-"""
+
+DOCUMENTATION = """
+------
 module: aix_suma
 author: "Cyril Bouhallier, Patrice Jacquin"
 version_added: "1.0.0"
@@ -346,7 +350,7 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
         tl_max = re.match( \
                      r"^([0-9]{4}-[0-9]{2})(|-[0-9]{2}|-[0-9]{2}-[0-9]{4})$", \
                      max_oslevel(clients_target_oslevel)).group(1)
-        
+
         # search also the lowest technical level from client list
         tl_min = re.match( \
                      r"^([0-9]{4}-[0-9]{2})(|-[0-9]{2}|-[0-9]{2}-[0-9]{4})$", \
@@ -416,7 +420,7 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
 
     elif rq_type == 'TL':
         # target verstion = TL part of the requested version
-        rq_name = re.match(r"^([0-9]{4}-[0-9]{2})(|-00|-00-0000)$", 
+        rq_name = re.match(r"^([0-9]{4}-[0-9]{2})(|-00|-00-0000)$",
                            oslevel).group(1)
 
     elif rq_type == 'SP':
@@ -477,16 +481,17 @@ def compute_filter_ml(clients_target_oslevel, rq_name):
         requested target os_level (rq_name).
     """
     minimum_oslevel = None
+    mini_tl = None
 
     for key, value in iter(clients_target_oslevel.items()):
         if re.match(r"^([0-9]{4})", value).group(1) == rq_name[:4] and \
             (minimum_oslevel is None or value < minimum_oslevel):
-             minimum_oslevel = value
+            minimum_oslevel = value
 
-    mini_TL = minimum_oslevel[:7]
+    if minimum_oslevel is not None:
+        mini_tl = minimum_oslevel[:7]
 
-    return mini_TL
-
+    return mini_tl
 
 
 # ----------------------------------------------------------------
@@ -622,9 +627,9 @@ def nim_command(module):
 
     if ret != 0:
         logging.error("NIM Command: {}".format(nim_params))
-        logging.error("NIM operation failed - rc:{}".format(rc))
+        logging.error("NIM operation failed - rc:{}".format(ret))
         logging.error("{}".format(stderr))
-        SUMA_OUTPUT.append('NIM operation failed - rc:{}'.format(rc))
+        SUMA_OUTPUT.append('NIM operation failed - rc:{}'.format(ret))
         module.fail_json(msg="NIM Master Command: {} => Error :{}". \
                          format(nim_params, stderr.split('\n')))
 
@@ -662,10 +667,11 @@ def check_time(val, mini, maxi):
     """
     if val == '*':
         return True
-    elif isdigit(val) and mini <= int(minute) and maxi >= int(minute):
+
+    if val.isdigit() and mini <= int(val) and maxi >= int(val):
         return True
-    else:
-        return False
+
+    return False
 
 
 # ----------------------------------------------------------------
@@ -680,11 +686,11 @@ def suma_edit(module):
     cmde = '/usr/sbin/suma'
     if PARAMS['sched_time'] is None:
         # save
-        cmde.append(' w')
+        cmde += ' w'
 
     elif not PARAMS['sched_time'].strip():
         # unschedule
-        cmde.append(' u')
+        cmde += ' u'
 
     else:
         # schedule
@@ -694,7 +700,7 @@ def suma_edit(module):
            check_time(day, 1, 31) and check_time(month, 1, 12) and \
            check_time(weekday, 0, 6):
 
-            cmde.append(' -s "{}"'.format(PARAMS['sched_time']))
+            cmde += ' -s "{}"'.format(PARAMS['sched_time'])
         else:
             logging.error("Error: suma {} command: Bad schedule time {}".\
                           format('edit', PARAMS['sched_time']))
@@ -702,7 +708,7 @@ def suma_edit(module):
                              format(PARAMS['sched_time']))
 
 
-    cmde.append(' {}'.format(PARAMS['task_id']))
+    cmde += ' {}'.format(PARAMS['task_id'])
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -801,6 +807,10 @@ def suma_down_prev(module):
     """
     Dowload (or preview) action
     """
+
+    global SUMA_CHANGED
+    global SUMA_OUTPUT
+
     # =========================================================================
     # build nim lpp_source list
     # =========================================================================
@@ -835,6 +845,15 @@ def suma_down_prev(module):
 
     logging.info('SUMA - Target list: {}'.format(target_clients))
     SUMA_OUTPUT.append('SUMA - Target list: {}'.format(target_clients))
+
+    if not target_clients:
+        # the tagets_list doesn't match any nim clients
+        logging.error( \
+               'SUMA Error - The targets parameters {} does not match any clients'. \
+               format(PARAMS['targets']))
+        module.fail_json( \
+               msg="SUMA Error - The targets parameters {} does not match any clients". \
+               format(PARAMS['targets']))
 
     # =========================================================================
     # Launch threads to collect information on targeted nim clients
@@ -885,9 +904,9 @@ def suma_down_prev(module):
     ret, rq_name = compute_rq_name(rq_type, PARAMS['req_oslevel'], clients_oslevel)
     if ret != 0:
         logging.error('SUMA Error compute_rq_name - rc:{}, error:{}'. \
-                      format(ret, nim_lpp_sources))
+                      format(ret, rq_name))
         module.fail_json(msg="SUMA Error compute_rq_name - rc:{}, error:{}". \
-                         format(ret, nim_lpp_sources))
+                         format(ret, rq_name))
 
     PARAMS['RqName'] = rq_name
 
@@ -900,6 +919,15 @@ def suma_down_prev(module):
     PARAMS['FilterMl'] = filter_ml
 
     logging.debug('{} <= Min Oslevel'.format(filter_ml))
+
+    if filter_ml is None:
+        # no technical level found for the target machines
+        logging.error( \
+               'SUMA Error - The requested oslevel {} does not match the target machine oslevels.'. \
+               format(rq_name))
+        module.fail_json( \
+               msg="SUMA Error - The requested oslevel {} does not match the target machine oslevels.". \
+               format(rq_name))
 
     # =========================================================================
     # metadata does not match any fixes
@@ -1035,6 +1063,10 @@ def suma_down_prev(module):
 # ----------------------------------------------------------------
 def main():
 
+    global SUMA_CHANGED
+    global SUMA_OUTPUT
+    global PARAMS
+
     module = AnsibleModule(
         argument_spec=dict(
             oslevel=dict(required=False, type='str'),
@@ -1074,7 +1106,7 @@ def main():
     targets = module.params['targets']
     task_id = module.params['task_id']
     sched_time = module.params['sched_time']
-    action = module.params['action']    
+    action = module.params['action']
 
     if module.params['description']:
         description = module.params['description']
@@ -1130,8 +1162,5 @@ def main():
 
 ###############################################################################
 
-# Ansible module 'boilerplate'
-from ansible.module_utils.basic import *
-
 if __name__ == '__main__':
-      main()
+    main()
