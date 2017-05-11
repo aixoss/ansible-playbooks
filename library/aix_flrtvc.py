@@ -168,12 +168,14 @@ def remove_efix(machine, label):
 
 
 @logged
-def check_prereq(epkg, ref):
+def check_prereq(epkg, ref, machine, force):
     """
     Check efix prerequisites based on fileset current level
     args:
-        epkg (str): The efix to check
-        ref  (str): The filename with reference fileset levels
+        epkg    (str) : The efix to check
+        ref     (str) : The filename with reference fileset levels
+        machine (str) : The target machine
+        force   (bool): The flag to automatically remove efixes
     """
     # Get fileset prerequisites
     stdout = ''
@@ -198,13 +200,13 @@ def check_prereq(epkg, ref):
                 (fileset, minlvl, maxlvl) = match.groups()
 
                 # ... check if fileset is locked ...
-                if locked_fileset():
-                    if force:
-                        # ... automatically remove efixes
-                        remove_efix(machine, label)
-                    else:
-                        # ... reject fileset from list
-                        break
+#                if locked_fileset(machine, ref):
+#                    if force:
+#                        # ... automatically remove efixes
+#                        remove_efix(machine, label)
+#                    else:
+#                        # ... reject fileset from list
+#                        break
 
                 # ... extract current fileset level ...
                 with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as myfile:
@@ -340,7 +342,7 @@ def run_parser(machine, output, report):
 
 @start_threaded(THRDS)
 @logged
-def run_downloader(machine, output, urls):
+def run_downloader(machine, output, urls, force):
     """
     Download URLs and check efixes
     args:
@@ -366,7 +368,7 @@ def run_downloader(machine, output, urls):
                 out['3.download'].extend(epkg)
 
             # check prerequisite
-            if check_prereq(epkg, 'lslpp_{}.txt'.format(machine)):
+            if check_prereq(epkg, 'lslpp_{}.txt'.format(machine), machine, force):
                 out['4.check'].extend(epkg)
 
         elif '.tar' in name:
@@ -400,7 +402,7 @@ def run_downloader(machine, output, urls):
             out['3.download'].extend(epkgs)
 
             # check prerequisite
-            epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine))]
+            epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine), machine, force)]
             out['4.check'].extend(epkgs)
         else:
             ################################
@@ -421,7 +423,7 @@ def run_downloader(machine, output, urls):
             out['3.download'].extend(epkgs)
 
             # check prerequisite
-            epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine))]
+            epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine), machine, force)]
             out['4.check'].extend(epkgs)
     output.update(out)
 
@@ -525,18 +527,78 @@ def client_list():
     return nim_clients
 
 
-def expand_targets(targets, nim_clients):
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
+def expand_targets(targets_list, nim_clients):
     """
-    Expand wildcard in target list
+    Expand the list of the targets.
+
+    a taget name could be of the following form:
+        target*       all the nim client machines whose name starts
+                          with 'target'
+        target[n1:n2] where n1 and n2 are numeric: target<n1> to target<n2>
+        * or ALL      all the nim client machines
+        client_name   the nim client named 'client_name'
+        master        the nim master
+
+        sample:  target[1:5] target12 other_target*
+
+    arguments:
+        machine (str): The name machine
+        result  (dict): The result of the command
+
+    return: the list of the existing machines matching the target list
     """
-    for machine in targets:
-        if '*' in machine:
-            # replace wildcard character by corresponding machines
-            i = targets.index(machine)
-            pattern = r'.*?\b(?![\w-])'
-            targets[i:i+1] = re.findall(machine.replace('*', pattern), ' '.join(nim_clients))
-    logging.debug(targets)
-    return targets
+    clients = []
+
+    for target in targets_list:
+
+        # -----------------------------------------------------------
+        # Build target(s) from: range i.e. quimby[7:12]
+        # -----------------------------------------------------------
+        rmatch = re.match(r"(\w+)\[(\d+):(\d+)\]", target)
+        if rmatch:
+
+            name = rmatch.group(1)
+            start = rmatch.group(2)
+            end = rmatch.group(3)
+
+            for i in range(int(start), int(end) + 1):
+                # target_results.append('{0}{1:02}'.format(name, i))
+                curr_name = name + str(i)
+                if curr_name in nim_clients:
+                    clients.append(curr_name)
+
+            continue
+
+        # -----------------------------------------------------------
+        # Build target(s) from: val*. i.e. quimby*
+        # -----------------------------------------------------------
+        rmatch = re.match(r"(\w+)\*$", target)
+        if rmatch:
+
+            name = rmatch.group(1)
+
+            for curr_name in nim_clients:
+                if re.match(r"^%s\.*" % name, curr_name):
+                    clients.append(curr_name)
+
+            continue
+
+        # -----------------------------------------------------------
+        # Build target(s) from: all or *
+        # -----------------------------------------------------------
+        if target.upper() == 'ALL' or target == '*':
+            clients = nim_clients
+            continue
+
+        # -----------------------------------------------------------
+        # Build target(s) from: quimby05 quimby08 quimby12
+        # -----------------------------------------------------------
+        if (target in nim_clients) or (target == 'master'):
+            clients.append(target)
+
+    return list(set(clients))
 
 
 def increase_fs(dest):
@@ -574,7 +636,7 @@ if __name__ == '__main__':
         ),
         supports_check_mode=True
     )
-    
+
     CHANGED = False
 
     # Logging
@@ -601,6 +663,9 @@ if __name__ == '__main__':
                      'dst_path':  MODULE.params['path'],
                      'verbose':   MODULE.params['verbose']}
     FORCE = MODULE.params['force']
+    # TBC - Temporary - invalidate the force option
+    FORCE = False
+
     CLEAN = MODULE.params['clean']
     CHECK_ONLY = MODULE.params['check_only']
     DOWNLOAD_ONLY = MODULE.params['download_only']
@@ -648,7 +713,7 @@ if __name__ == '__main__':
     # ===========================================
     logging.debug('*** DOWNLOAD ***')
     for MACHINE in TARGETS:
-        run_downloader(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['1.parse'])
+        run_downloader(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['1.parse'], FORCE)
     wait_all()
 
     if DOWNLOAD_ONLY:

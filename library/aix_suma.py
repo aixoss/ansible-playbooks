@@ -41,10 +41,6 @@ version_added: "1.0.0"
 requirements: [ AIX ]
 """
 
-SUMA_CHANGED = False
-SUMA_OUTPUT = []
-PARAMS = {}
-
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
@@ -115,7 +111,8 @@ def run_cmd(machine, result):
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def expand_targets(targets_list, nim_clients):
-    """Expand the list of the targets.
+    """
+    Expand the list of the targets.
 
     a taget name could be of the following form:
         target*       all the nim client machines whose name starts
@@ -622,7 +619,6 @@ def nim_command(module):
     logging.info('NIM - Command:{}'.format(nim_params))
     SUMA_OUTPUT.append('NIM command:{}'.format(nim_params))
 
-
     ret, stdout, stderr = module.run_command(nim_params)
 
     if ret != 0:
@@ -707,7 +703,6 @@ def suma_edit(module):
             module.fail_json(msg="SUMA Command edit: Bad schedule time {}". \
                              format(PARAMS['sched_time']))
 
-
     cmde += ' {}'.format(PARAMS['task_id'])
     ret, stdout, stderr = module.run_command(cmde)
 
@@ -720,7 +715,6 @@ def suma_edit(module):
     SUMA_OUTPUT.append('Edit suma task {}'. \
                        format(PARAMS['task_id']))
     SUMA_OUTPUT.append(stdout.split('\n'))
-
 
 
 # ----------------------------------------------------------------
@@ -809,7 +803,7 @@ def suma_down_prev(module):
     """
 
     global SUMA_CHANGED
-    global SUMA_OUTPUT
+    global PARAMS
 
     # =========================================================================
     # build nim lpp_source list
@@ -1058,14 +1052,13 @@ def suma_down_prev(module):
                                format(stdout))
 
 
-# ----------------------------------------------------------------
-# MAIN
-# ----------------------------------------------------------------
-def main():
+###############################################################################
 
-    global SUMA_CHANGED
-    global SUMA_OUTPUT
-    global PARAMS
+if __name__ == '__main__':
+
+    SUMA_CHANGED = False
+    SUMA_OUTPUT = []
+    PARAMS = {}
 
     module = AnsibleModule(
         argument_spec=dict(
@@ -1159,8 +1152,3 @@ def main():
         suma_output=SUMA_OUTPUT,
         lpp_source_name=PARAMS['lpp_source'],
         target_list=PARAMS['target_clients'])
-
-###############################################################################
-
-if __name__ == '__main__':
-    main()
