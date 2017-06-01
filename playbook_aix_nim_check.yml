@@ -1,0 +1,16 @@
+---
+- name: "NIM check on AIX playbook"
+  hosts: all
+  gather_facts: no
+
+  tasks:
+
+    - name: "AIX NIM"
+      aix_nim:
+        action: 'check'
+        description: 'NIM check'
+
+      register: nim_output
+
+    - debug: var=nim_output
+

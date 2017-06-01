@@ -1,0 +1,16 @@
+---
+- name: "NIM reboot on AIX"
+  hosts: all
+  gather_facts: no
+
+  tasks:
+
+    - name: "AIX NIM"
+      aix_nim:
+        action: 'reboot'
+        targets: "quimby0[3:5]"
+        description: 'NIM reboot'
+
+      register: nim_output
+
+    - debug: var=nim_output

@@ -1,0 +1,39 @@
+---
+- name: "SUMA/NIM on AIX playbook"
+  hosts: all
+  gather_facts: no
+
+  vars:
+      target_list: quimby0[7:9]
+
+  tasks:
+
+    #######################################################################
+    ### SUMA on AIX
+    #######################################################################
+    - name: "AIX SUMA"
+      aix_suma:
+        oslevel: 'latest'
+        targets: "{{ target_list }}"
+        location: '/export/extra/lpp_source'
+        action: download
+        description: 'Download latest'
+
+      register: suma_res
+
+    - debug: var=suma_res
+
+    #######################################################################
+    ### NIM install on AIX
+    #######################################################################
+    - name: "AIX NIM"
+      aix_nim:
+        action: 'update'
+        targets: "{{ suma_res.target_list }}"
+        lpp_source: "{{ suma_res.lpp_source_name }}"
+        description: 'NIM update latest'
+
+      register: nim_res
+
+    - debug: var=nim_res.nim_output
+
