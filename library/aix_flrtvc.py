@@ -186,7 +186,7 @@ def check_prereq(epkg, ref, machine, force):
         logging.warn('EXCEPTION cmd={} rc={} output={}'
                      .format(exc.cmd, exc.returncode, exc.output))
 
-    res = False
+    res = True
     # For each prerequisites, ...
     for line in stdout.splitlines()[3:]:
 
@@ -195,9 +195,11 @@ def check_prereq(epkg, ref, machine, force):
         if line and not line.startswith('#'):
 
             # ... match prerequisite ...
-            match = re.match(r'^(.*?)\s+(.*?)\s+(.*?)$', line)
+            match = re.match(r'^(.*?)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)$', line)
             if match is not None:
                 (fileset, minlvl, maxlvl) = match.groups()
+                minlvl_i = list(map(int, minlvl.split(".")))
+                maxlvl_i = list(map(int, maxlvl.split(".")))
 
                 # ... check if fileset is locked ...
 #                if locked_fileset(machine, ref):
@@ -210,15 +212,22 @@ def check_prereq(epkg, ref, machine, force):
 
                 # ... extract current fileset level ...
                 with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as myfile:
+                    found = False
                     for line in myfile:
                         if fileset in line:
+                            found = True
                             curlvl = line.split(':')[2]
+                            curlvl_i = list(map(int, curlvl.split(".")))
 
                             # ... and compare to min/max levels.
                             logging.debug('{} {} {} {}'.format(fileset, minlvl, curlvl, maxlvl))
-                            if minlvl <= curlvl and curlvl <= maxlvl:
-                                res = True
+                            if curlvl_i < minlvl_i or curlvl_i > maxlvl_i:
+                                res = False
                             break
+
+                    if found == False:
+                        res = False
+
     return res
 
 
@@ -274,13 +283,16 @@ def run_flrtvc(machine, output, params):
         output  (dict): The result of the command
         params  (dict): The parameters to pass to flrtvc command
     """
+
+    global WORKDIR
+
     # Run 'lslpp -Lcq' on the remote machine and save to file
-    lslpp_file = 'lslpp_{}.txt'.format(machine)
+    lslpp_file = os.path.join(WORKDIR, 'lslpp_{}.txt'.format(machine))
     thd1 = threading.Thread(target=run_lslpp, args=(machine, lslpp_file))
     thd1.start()
 
     # Run 'emgr -lv3' on the remote machine and save to file
-    emgr_file = 'emgr_{}.txt'.format(machine)
+    emgr_file = os.path.join(WORKDIR, 'emgr_{}.txt'.format(machine))
     thd2 = threading.Thread(target=run_emgr, args=(machine, emgr_file))
     thd2.start()
 
@@ -350,7 +362,11 @@ def run_downloader(machine, output, urls, force):
         output (dict): The result of the command
         urls   (list): The list of URLs to download
     """
+
+    global WORKDIR
+
     out = {'2.discover': [], '3.download': [], '4.check': []}
+    lslpp_file = os.path.join(WORKDIR, 'lslpp_{}.txt'.format(machine))
     for url in urls:
         protocol, srv, rep, name = re.search(r'^(.*?)://(.*?)/(.*)/(.*)$', url).groups()
         logging.debug('{}: protocol={}, srv={}, rep={}, name={}'
@@ -363,12 +379,12 @@ def run_downloader(machine, output, urls, force):
             out['2.discover'].extend(name)
 
             # download epkg file
-            epkg = os.path.abspath(os.path.join(os.sep, name))
+            epkg = os.path.abspath(os.path.join(WORKDIR, name))
             if download(url, epkg):
                 out['3.download'].extend(epkg)
 
             # check prerequisite
-            if check_prereq(epkg, 'lslpp_{}.txt'.format(machine), machine, force):
+            if check_prereq(epkg, lslpp_file, machine, force):
                 out['4.check'].extend(epkg)
 
         elif '.tar' in name:
@@ -376,7 +392,7 @@ def run_downloader(machine, output, urls, force):
             # URL as a tar file
             ################################
             logging.debug('{}: treat url as a tar file'.format(machine))
-            dst = os.path.abspath(os.path.join(os.sep, name))
+            dst = os.path.abspath(os.path.join(WORKDIR, name))
 
             # download and open tar file
             download(url, dst)
@@ -388,7 +404,7 @@ def run_downloader(machine, output, urls, force):
             logging.debug('{}: found {} epkg.Z file in tar file'.format(machine, len(epkgs)))
 
             # extract epkg
-            tar_dir = 'outdir'
+            tar_dir = os.path.join(WORKDIR, 'tardir')
             if not os.path.exists(tar_dir):
                 os.makedirs(tar_dir)
             for epkg in epkgs:
@@ -398,11 +414,11 @@ def run_downloader(machine, output, urls, force):
                     logging.warn('EXCEPTION {}'.format(exc))
                     increase_fs(tar_dir)
                     tar.extract(epkg, tar_dir)
-            epkgs = [os.path.abspath(os.path.join(os.sep, tar_dir, epkg)) for epkg in epkgs]
+            epkgs = [os.path.abspath(os.path.join(tar_dir, epkg)) for epkg in epkgs]
             out['3.download'].extend(epkgs)
 
             # check prerequisite
-            epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine), machine, force)]
+            epkgs = [epkg for epkg in epkgs if check_prereq(epkg, lslpp_file, machine, force)]
             out['4.check'].extend(epkgs)
         else:
             ################################
@@ -418,12 +434,12 @@ def run_downloader(machine, output, urls, force):
             logging.debug('{}: found {} epkg.Z file in html body'.format(machine, len(epkgs)))
 
             # download epkg
-            epkgs = [os.path.abspath(os.path.join(os.sep, epkg)) for epkg in epkgs
-                     if download(os.path.join(url, epkg), os.path.abspath(os.path.join(os.sep, epkg)))]
+            epkgs = [os.path.abspath(os.path.join(WORKDIR, epkg)) for epkg in epkgs
+                     if download(os.path.join(url, epkg), os.path.abspath(os.path.join(WORKDIR, epkg)))]
             out['3.download'].extend(epkgs)
 
             # check prerequisite
-            epkgs = [epkg for epkg in epkgs if check_prereq(epkg, 'lslpp_{}.txt'.format(machine), machine, force)]
+            epkgs = [epkg for epkg in epkgs if check_prereq(epkg, lslpp_file, machine, force)]
             out['4.check'].extend(epkgs)
     output.update(out)
 
@@ -438,9 +454,12 @@ def run_installer(machine, output, epkgs, force):
         output (dict): The result of the command
         epkgs  (list): The list of efixes to install
     """
+
     global CHANGED
+    global WORKDIR
+
     if epkgs:
-        destpath = os.path.abspath(os.path.join(os.sep))
+        destpath = os.path.abspath(os.path.join(WORKDIR))
         destpath = os.path.join(destpath, 'flrtvc_lpp_source', machine, 'emgr', 'ppc')
         # create lpp source location
         if not os.path.exists(destpath):
@@ -454,6 +473,7 @@ def run_installer(machine, output, epkgs, force):
                 increase_fs(destpath)
                 shutil.copy(epkg, destpath)
         epkgs_base = [os.path.basename(epkg) for epkg in epkgs]
+        epkgs_base.sort(reverse = True)
 
         efixes = ' '.join(epkgs_base)
         lpp_source = machine + '_lpp_source'
@@ -640,9 +660,10 @@ if __name__ == '__main__':
     CHANGED = False
 
     # Logging
-    LOGNAME = '/tmp/ansible_debug.log'
+    LOGNAME = '/tmp/ansible_flrtvc_debug.log'
     LOGFRMT = '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s'
     logging.basicConfig(filename=LOGNAME, format=LOGFRMT, level=logging.DEBUG)
+
     logging.debug('*** START ***')
 
     # ===========================================
@@ -656,6 +677,7 @@ if __name__ == '__main__':
     # Get module params
     # ===========================================
     logging.debug('*** INIT ***')
+
     TARGETS = expand_targets(re.split(r'[,\s]', MODULE.params['targets']), NIM_CLIENTS)
     FLRTVC_PARAMS = {'apar_type': MODULE.params['apar'],
                      'apar_csv':  MODULE.params['csv'],
@@ -669,6 +691,13 @@ if __name__ == '__main__':
     CLEAN = MODULE.params['clean']
     CHECK_ONLY = MODULE.params['check_only']
     DOWNLOAD_ONLY = MODULE.params['download_only']
+
+    if (FLRTVC_PARAMS['dst_path'] is None) or (not FLRTVC_PARAMS['dst_path'].strip()) :
+        FLRTVC_PARAMS['dst_path'] = '/tmp/ansible'
+    WORKDIR = os.path.join(FLRTVC_PARAMS['dst_path'], 'work')
+
+    if not os.path.exists(WORKDIR):
+        os.makedirs(WORKDIR, mode=0744)
 
     # metadata
     OUTPUT = {}

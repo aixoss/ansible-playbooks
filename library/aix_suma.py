@@ -835,7 +835,7 @@ def suma_down_prev(module):
     targets_list = PARAMS['targets'].split(' ')
     target_clients = []
     target_clients = expand_targets(targets_list, nim_clients)
-    PARAMS['targets_clients'] = target_clients
+    PARAMS['target_clients'] = target_clients
 
     logging.info('SUMA - Target list: {}'.format(target_clients))
     SUMA_OUTPUT.append('SUMA - Target list: {}'.format(target_clients))
@@ -1108,7 +1108,7 @@ if __name__ == '__main__':
 
     PARAMS['Description'] = description
     PARAMS['action'] = action
-    PARAMS['lpp_source'] = ''
+    PARAMS['LppSource'] = ''
     PARAMS['target_clients'] = ()
 
     # =========================================================================
@@ -1150,5 +1150,5 @@ if __name__ == '__main__':
         changed=SUMA_CHANGED,
         msg="Suma {} completed successfully".format(action),
         suma_output=SUMA_OUTPUT,
-        lpp_source_name=PARAMS['lpp_source'],
-        target_list=PARAMS['target_clients'])
+        lpp_source_name=PARAMS['LppSource'],
+        target_list=" ".join(PARAMS['target_clients']))
