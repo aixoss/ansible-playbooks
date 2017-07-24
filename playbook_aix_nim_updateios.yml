@@ -1,0 +1,18 @@
+- name: "NIM ios update on AIX playbook"
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    - name: "update ios"
+      update_ios:
+        targets: "gdrh10v1"
+        filesets: "none"
+        installp_bundle: "__smit_bundle_8323538"
+        lpp_source: "VIOS_225_30-lpp_source"
+        accept_licenses: "yes"
+        updateios_flags: "-install"
+        preview: "no"
+
+      register: result
+
+    - debug: var=result
