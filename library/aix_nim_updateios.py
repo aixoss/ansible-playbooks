@@ -141,7 +141,7 @@ def check_updateios_flags(module, flag):
     return
         - valid         True
     """
-    valid_flags = ['-install', '-commit', '-reject', '-cleanup', 'remove']
+    valid_flags = ['-install', '-commit', '-reject', '-cleanup', '-remove']
     if flag not in valid_flags:
         logging.error('NIM - Error: updateios_flags parameter {} invalid'.format(flag))
         module.fail_json(msg="NIM - Error: updateios_flags parameter {} invalid".format(flag))
