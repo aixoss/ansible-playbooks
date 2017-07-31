@@ -263,12 +263,9 @@ if __name__ == '__main__':
 
     logging.info('Done with nim updateios operation')
 
-    try:
-        module.exit_json(
-            changed = CHANGED,
-            msg = "NIM VIO update operation completed successfully",
-            targets = module.params['targets'],
-            debug_output = DEBUG_DATA,
-            output = OUTPUT)
-    except:
-        module.fail_json(msg="Something fatal happened")
+    module.exit_json(
+        changed = CHANGED,
+        msg = "NIM VIO update operation completed successfully",
+        targets = module.params['targets'],
+        debug_output = DEBUG_DATA,
+        output = OUTPUT)
