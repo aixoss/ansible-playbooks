@@ -267,7 +267,7 @@ def run_emgr(machine, filename):
                      .format(machine, exc.cmd, exc.returncode, exc.output))
 
 
-@start_threaded(THRDS)
+# @start_threaded(THRDS)
 @logged
 def run_flrtvc(machine, output, params):
     """
@@ -327,7 +327,7 @@ def run_flrtvc(machine, output, params):
         MODULE.exit_json(changed=CHANGED, msg='error executing flrtvc', meta=output)
 
 
-@start_threaded(THRDS)
+# @start_threaded(THRDS)
 @logged
 def run_parser(machine, output, report):
     """
@@ -346,7 +346,7 @@ def run_parser(machine, output, report):
     output.update({'1.parse': rows})
 
 
-@start_threaded(THRDS)
+# @start_threaded(THRDS)
 @logged
 def run_downloader(machine, output, urls, force):
     """
