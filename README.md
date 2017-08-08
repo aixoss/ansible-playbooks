@@ -109,3 +109,21 @@ Must be described in yaml format with the following parameters:
 
 
 ```
+
+### updateios
+
+Updates the Virtual I/O Server to the latest maintenace level.
+
+In the aix_updateios module is:
+
+
+```yaml
+    aix_updateios:
+      target:           specify the target VIOS
+      lpp_source:       specify the resource that will provide the installation images
+      filesets:         specify a list of file sets to remove from the target
+      installp_bundle:  specify the resource that lists file sets to remove on the target
+      accept_licenses:  specify whether the software licenses should be automatically accepted during the installation
+      updateios_flag:   specify the flag that tells updateios what operation to perform on the VIOS
+      preview:          specify a preview operation for the updateios operation
+```
