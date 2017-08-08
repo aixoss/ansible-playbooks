@@ -22,7 +22,7 @@ Creates a task to automate the download of technology levels (TL) and service pa
 
 Must be described in yaml format with the follwoing parameters:
 
-...
+```yaml
     aix_suma:
       oslevel:  required; specifies the OS level to update to;
                 "latest" indicates the latest level of the higher TL among
@@ -51,7 +51,7 @@ Creates a task to update targets.
 
 Must be described in yaml format with the following parameters:
 
-...
+```yaml
     aix_nim:
       lpp_source: indicates the lpp_source to apply to the targets;
                   "latest_tl", "latest_sp", "next_tl" and "next_sp" can be specified;
@@ -74,7 +74,7 @@ Must be described in yaml format with the following parameters:
                           requires "targets" to be specified;
                   "reboot" reboots the targets. "targets" must be specified.
 
-...
+```
 
 ### FLRTVC
 
@@ -82,7 +82,7 @@ Creates a task to check targets vulnerability against available fixes, and apply
 
 Must be described in yaml format with the following parameters:
 
-...
+```yaml
     aix_flrtvc:
       targets:      required; specifies the NIM clients to update;
                     "foo*" designates all the NIM clients with name starting by "foo";
@@ -108,4 +108,4 @@ Must be described in yaml format with the following parameters:
                     (no update of the targets).
 
 
-...
+```
