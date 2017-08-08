@@ -1,0 +1,55 @@
+---
+- name: "VIOS update on AIX"
+  hosts: all
+  gather_facts: no
+
+  tasks:
+
+    - name: "AIX VIOS HEALTH CHECK"
+      aix_nim_vios_hc:
+        description: 'Check the VIOS(es) can be updated'
+        targets: "(gdrh10v1) (gdrh10v2) (gdrh9v1) (gdrh9v2)"
+        action: "health_check"
+
+      register: hc_result
+
+    - debug: var=hc_result.output
+
+    - name: "AIX VIOS ALT DISK COPY"
+      aix_nim_vios_alt_disk:
+        description: 'Perform the rootvg copy to an alternate disk'
+        targets: "(gdrh10v1,hdisk1) (gdrh10v2,hdisk2) (gdrh9v1,hdisk1) (gdrh9v2,hdisk1)"
+        action: "alt_disk_copy"
+        vios_status: "{{ hc_result.status }}"
+
+      register: altd_result
+
+    - debug: var=altd_result.output
+
+    - name: "AIX NIM update ios"
+      aix_nim_updateios:
+        targets: "gdrh10v1 gdrh10v2 gdrh9v1 gdrh9v2"
+        filesets: "none"
+        installp_bundle: "__smit_bundle_8323538"
+        lpp_source: "VIOS_225_30-lpp_source"
+        accept_licenses: "yes"
+        updateios_flags: "-install"
+        preview: "no"
+        vios_status: "{{ altd_result.status }}"
+
+      register: updt_result
+
+    - debug: var=updt_result.output
+
+    - name: "AIX VIOS ALT DISK CLEANUP"
+      aix_nim_vios_alt_disk:
+        description: 'Remove the altinst_rootvg from the alternate disk'
+        targets: "(gdrh10v1,hdisk1) (gdrh10v2,hdisk2) (gdrh9v1,hdisk3) g(gdrh9v2,hdisk4)"
+        action: alt_disk_clean
+        vios_status: "{{ updt_result.status }}"
+
+      register: altdisk_result
+
+    - debug: var=altdisk_result.output
+
+
