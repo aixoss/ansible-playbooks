@@ -1,0 +1,17 @@
+---
+- name: "VIOS health check on AIX"
+  hosts: all
+  gather_facts: no
+
+  tasks:
+
+    - name: "AIX HEALTH CHECK"
+      aix_nim_vios_hc:
+        description: 'playbook_aix_vios_health_check'
+        targets: "(gdrh9v1,gdrh9v2) (gdrh10v1,gdrh10v2)"
+        action: health_check
+
+      register: hc_output
+
+    - debug: var=hc_output
+
