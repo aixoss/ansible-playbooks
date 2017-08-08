@@ -32,9 +32,8 @@ from ansible.module_utils.basic import *
 DOCUMENTATION = """
 ---
 module: update_ios
-authors: Cynthia Wu, Marco Lugo
+authors: Cynthia Wu, Marco Lugo, Patrice Jacquin
 short_description: Perform a VIO update 
-
 """
 
 
@@ -44,9 +43,7 @@ def exec_cmd(cmd):
     """
     Execute the given command
         - cmd       array of command parameters
-
     In case of error return (1, " ")
-
     return
         - ret_code  (0)
         - std_out   output of the command
@@ -67,8 +64,8 @@ def exec_cmd(cmd):
 
     # DEBUG
     DEBUG_DATA.append('exec command:{}'.format(cmd))
-    DEBUG_DATA.append('exec command Error:{}'.format(std_err))
-    logging.debug('exec command Error:{}'.format(std_err))
+    DEBUG_DATA.append('exec command stderr:{}'.format(std_err))
+    logging.debug('exec command stderr:{}'.format(std_err))
     logging.debug('exec command output:{}'.format(std_out))
     # --------------------------------------------------------
 
@@ -82,9 +79,7 @@ def check_lpp_source(module, lpp_source):
     Check to make sure lpp_source exists
         - module        the module variable
         - lpp_source    lpp_source param provided by module
-
     In case lpp_source does not exist fail the module 
-
     return
         - exists        True
     """
@@ -114,14 +109,15 @@ def check_targets(module, targets):
     Check to make sure targets exist
         - module        the module variable 
         - targets       targets param provided by module
-
     In case target does not exist fail the module 
-
     return
         - exists        target exists
     """
 
-    cmd = ['lsnim','-l', targets]
+    cmd = ['lsnim','-l']
+    for target in targets.split():
+        cmd += [target]
+
     ret, std_out = exec_cmd(cmd)
     if ret != 0:
         logging.error('NIM - Error: target {} cannot be found'.format(targets))
@@ -137,11 +133,10 @@ def check_updateios_flags(module, flag):
     Check to make sure updateios_flags value is valid
         - module        the module variable
         - flag          updateios action
-
     return
         - valid         True
     """
-    valid_flags = ['-install', '-commit', '-reject', '-cleanup', '-remove']
+    valid_flags = ['-install', '-commit', '-reject', '-cleanup', 'remove']
     if flag not in valid_flags:
         logging.error('NIM - Error: updateios_flags parameter {} invalid'.format(flag))
         module.fail_json(msg="NIM - Error: updateios_flags parameter {} invalid".format(flag))
@@ -152,11 +147,10 @@ def check_updateios_flags(module, flag):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def get_updateios_cmd(module):
+def get_updateios_cmd(module, vios_status, update_op_tab, targets_list):
     """
     Assemble the updateios command
         - module        the module variable 
-
     return
         - cmd           array of the command parameters
     """
@@ -199,25 +193,50 @@ def get_updateios_cmd(module):
     # targets
     if module.params['targets']:
         if (check_targets(module, module.params['targets'])):
-            cmd += [module.params['targets']]
+
+            for target in module.params['targets'].split():
+                if not(vios_status is None):
+                    if target not in vios_status:
+                        logging.info('VIO UPDATE - target {} has been discarded (UNKNOWN)'.format(target))
+                        OUTPUT.append('target {} has been discarded (UNKNOWN)'.format(target))
+                        continue
+
+                    elif vios_status[target] != 'SUCCESS-ALTDC':
+                        update_op_tab[target] = vios_status[target]
+                        logging.warn("VIO UPDATE - target {} has been discarded({})".format(target, vios_status[target].split()[0])) 
+                        OUTPUT.append("{} target has been discarded ({})".format(target, vios_status[target].split()[0]))
+                        continue
+
+                targets_list.append(target)
+                cmd += [target]
 
     return cmd
 
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def nim_updateios(module):
+def nim_updateios(module, vios_status, update_op_tab):
     """
     Execute the updateios command
         - module        the module variable
-
     return
         - ret           return code of nim updateios command 
     """
     global CHANGED
     global OUTPUT
 
-    cmd = get_updateios_cmd(module)
+    targets_list = []
+
+    cmd = get_updateios_cmd(module, vios_status, update_op_tab, targets_list)
+
+    # TBC - Begin: For test only - should be removed
+    # OUTPUT.append('NIM Command: {} '.format(cmd))
+    # ret = 0
+    # std_out = 'NIM Command: {} '.format(cmd)
+    # TBC - End
+
+    # TBC - should be commented for test !
+    # ret, std_out = exec_cmd(cmd)
     ret, std_out = exec_cmd(cmd)
 
     logging.info('[RC] {}'.format(ret))
@@ -226,8 +245,13 @@ def nim_updateios(module):
     if ret != 0:
         logging.error('Error: NIM Command: {} failed with return code {}'.format(cmd, ret))
         OUTPUT.append("FAILURE")
+        for target in targets_list:
+            update_op_tab[target] = 'FAILURE-UPDT1'
+    else:
+        OUTPUT.append("SUCCESS")
+        for target in targets_list:
+            update_op_tab[target] = 'SUCCESS-UPDT1' 
 
-    OUTPUT.append("SUCCESS")
     CHANGED = True
 
     return ret
@@ -248,7 +272,8 @@ if __name__ == '__main__':
             lpp_source=dict(required=True, type='str'),
             accept_licenses=dict(required=False, type='str'),
             updateios_flags=dict(required=True, type='str'),
-            preview=dict(required=False, type='str')
+            preview=dict(required=False, type='str'),
+            vios_status=dict(required=False, type='dict')
         )
     )
 
@@ -257,15 +282,33 @@ if __name__ == '__main__':
     LOGFRMT = '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s'
     logging.basicConfig(filename=LOGNAME, format=LOGFRMT, level=logging.DEBUG)
 
+    targets_update_status = {}
+    vios_status = {}
 
-    logging.debug('*** START VIO UPDATE OPERATION ***')
-    nim_updateios(module)
+    if module.params['vios_status']:
+        vios_status = module.params['vios_status']
+    else:
+        vios_status = None
+
+    logging.debug('*** START NIM VIO UPDATE OPERATION ***')
+    ret = nim_updateios(module, vios_status, targets_update_status)
 
     logging.info('Done with nim updateios operation')
+
+    if len(targets_update_status) != 0:
+        OUTPUT.append('NIM VIO update operation status:')
+        for vios_key in targets_update_status.keys():
+            OUTPUT.append("    {} : {}".format(vios_key, targets_update_status[vios_key]))
+
+        logging.info('NIM VIO update operation result: {}'.format(targets_update_status))
+    else:
+        OUTPUT.append('NIM VIO update operation: Error getting the status')
+        targets_update_status = vios_status
 
     module.exit_json(
         changed = CHANGED,
         msg = "NIM VIO update operation completed successfully",
         targets = module.params['targets'],
         debug_output = DEBUG_DATA,
-        output = OUTPUT)
+        output = OUTPUT,
+        status = targets_update_status)
