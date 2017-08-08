@@ -1,0 +1,26 @@
+---
+- name: "VIOS alternate disk copy on AIX"
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    - name: "AIX VIOS ALT DISK COPY"
+      aix_nim_vios_alt_disk:
+        description: 'Perform an alternate disk copy on VIOS'
+        targets: "(gdrh9v1,hdisk1,gdrh9v2,hdisk2)"
+        action: alt_disk_copy
+
+      register: altdisk_copy_result
+
+    - debug: var=altdisk_copy_result
+
+    - name: "AIX VIOS ALT DISK CLEANUP"
+      aix_nim_vios_alt_disk:
+        description: 'Remove the altinst_rootvg from the alternate disk'
+        targets: "(gdrh9v1,hdisk1,gdrh9v2,)"
+        action: alt_disk_clean
+        vios_status: "{{ altdisk_copy_result.status }}"
+
+      register: altdisk_result
+
+    - debug: var=altdisk_result
