@@ -116,9 +116,9 @@ def exec_cmd(cmd, module):
 
     # DEBUG
     DEBUG_DATA.append('exec command:{}'.format(cmd))
-    DEBUG_DATA.append('exec command Error:{}'.format(std_err))
-    logging.debug('exec command Error:{}'.format(std_err))
+    DEBUG_DATA.append('exec command std_err:{}'.format(std_err))
     logging.debug('exec command output:{}'.format(std_out))
+    logging.debug('exec command std_err:{}'.format(std_err))
 
     return (err_code, std_out)
 

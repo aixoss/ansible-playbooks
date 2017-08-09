@@ -9,6 +9,7 @@
         description: 'Perform an alternate disk copy on VIOS'
         targets: "(gdrh9v1,hdisk1,gdrh9v2,hdisk2)"
         action: alt_disk_copy
+        #time_limit: "mm/dd/yyyy hh:mm"
 
       register: altdisk_copy_result
 

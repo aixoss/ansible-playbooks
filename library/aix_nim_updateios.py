@@ -215,7 +215,7 @@ def get_updateios_cmd(module, vios_status, update_op_tab, targets_list):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def nim_updateios(module, vios_status, update_op_tab):
+def nim_updateios(module, vios_status, update_op_tab, time_limit):
     """
     Execute the updateios command
         - module        the module variable
@@ -228,6 +228,18 @@ def nim_updateios(module, vios_status, update_op_tab):
     targets_list = []
 
     cmd = get_updateios_cmd(module, vios_status, update_op_tab, targets_list)
+
+    # check if there is time to handle this tuple
+    if not (time_limit is None) and time.localtime(time.time()) >= time_limit:
+        for target in targets_list:
+            update_op_tab[target] = 'SKIPPED-TIMEDOUT'
+        time_limit_str = time.strftime("%m/%d/%Y %H:%M", time_limit)
+        OUTPUT.append("Time limit {} reached, no further operation". \
+                format(time_limit_str))
+        logging.info('Time limit {} reached, no further operation'. \
+                format(time_limit_str))
+        return 0
+
 
     # TBC - Begin: For test only - should be removed
     # OUTPUT.append('NIM Command: {} '.format(cmd))
@@ -273,6 +285,7 @@ if __name__ == '__main__':
             accept_licenses=dict(required=False, type='str'),
             updateios_flags=dict(required=True, type='str'),
             preview=dict(required=False, type='str'),
+            time_limit=dict(required=False, type='str'),
             vios_status=dict(required=False, type='dict')
         )
     )
@@ -285,13 +298,32 @@ if __name__ == '__main__':
     targets_update_status = {}
     vios_status = {}
 
+    # =========================================================================
+    # Get Module params
+    # =========================================================================
     if module.params['vios_status']:
         vios_status = module.params['vios_status']
     else:
         vios_status = None
 
+    # build a time structurei for time_limit attribute,
+    # the date can be omitted if sameday
+    time_limit = None
+    if module.params['time_limit']:
+        match_key = re.match(r"^\S*\d{2}/\d{2}/\d{4} \S*\d{2}:\d{2}\S*$", module.params['time_limit'])
+        if match_key:
+            time_limit = time.strptime(module.params['time_limit'], '%m/%d/%Y %H:%M')
+        else:
+            msg = 'Malformed time limit "{}", please use mm/dd/yyyy hh:mm format.'. \
+                    format(module.params['time_limit'])
+            module.fail_json(msg=msg)
+
+    # =========================================================================
+    # Perfom the update
+    # =========================================================================
+
     logging.debug('*** START NIM VIO UPDATE OPERATION ***')
-    ret = nim_updateios(module, vios_status, targets_update_status)
+    ret = nim_updateios(module, vios_status, targets_update_status, time_limit)
 
     logging.info('Done with nim updateios operation')
 
@@ -305,6 +337,9 @@ if __name__ == '__main__':
         OUTPUT.append('NIM VIO update operation: Error getting the status')
         targets_update_status = vios_status
 
+    # =========================================================================
+    # Exit
+    # =========================================================================
     module.exit_json(
         changed = CHANGED,
         msg = "NIM VIO update operation completed successfully",

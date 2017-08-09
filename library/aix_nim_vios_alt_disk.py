@@ -38,7 +38,7 @@ author: "Patrice Jacquin, Vianney Robin"
 version_added: "1.0.0"
 requirements: [ AIX ]
 
-TBC - Does proc.communicate set the return code with the command's return code? (seems to get 0 even we get "command not found" in stderr) 
+TBC - Does proc.communicate set the return code with the command's return code? (seems to get 0 even we get "command not found" in stderr)
 
 Note - alt_disk_copy only backs up mounted file systems. Mount all file systems that you want to back up.
      - copy is performed only on one alternate hdisk even if the rootvg contains multiple hdisks
@@ -98,7 +98,7 @@ def get_hmc_info(module):
     Get the hmc info on the nim master, and get their login/passwd
 
     fill the hmc_dic passed in parameter (filled with the login/passwd value)
-    
+
     return a dic with hmc info
     """
     std_out = ''
@@ -203,7 +203,7 @@ def get_nim_clients_info(module, lpar_type):
                                   format(obj_key, match_mgmtprof.group(1)))
                 continue
 
-            match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line) 
+            match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line)
             if match_if:
                 info_hash[obj_key]['vios_ip'] = match_if.group(1)
                 continue
@@ -258,7 +258,7 @@ def check_vios_targets(targets):
     in that case, the first available disk with a enough space will be taken
 
     arguments:
-        targets (str): list of tuple of NIM name of vios machine and 
+        targets (str): list of tuple of NIM name of vios machine and
                            associated alternate disk
 
     return: the list of the existing vios tuple matching the target list
@@ -364,7 +364,7 @@ def get_pvs(module, vios):
             pvs[match_key.group(1)]['pvid'] = match_key.group(2)
             pvs[match_key.group(1)]['vg'] = match_key.group(3)
             pvs[match_key.group(1)]['status'] = match_key.group(4)
-    
+
     logging.debug('List of PVs:')
     for key in pvs.keys():
         logging.debug('    pvs[{}]: {}'.format(key, pvs[key]))
@@ -464,7 +464,7 @@ def get_vg_size(module, vios, vg_name):
         match_key = re.match(r".*TOTAL PPs:\s+\d+\s+\((\d+)\s+megabytes\).*", line)
         if match_key:
             vg_size = int(match_key.group(1))
-    
+
     if vg_size == -1:
         OUTPUT.append('    Failed to get the {} VG size on {}, parsing error'. \
                 format(vg_name, vios))
@@ -615,7 +615,7 @@ def wait_altdisk_install(module, vios, vios_dict, vios_key, altdisk_op_tab, err_
 
     # if there is no progress in nim operation "info" attribute for more than
     # 30 minutes we time out: 180 * 10s = 30 min
-    check_count = 0 
+    check_count = 0
     nim_info_prev = "___"   # this info should not appears in nim info attribute
     while check_count <= 180:
         time.sleep(10)
@@ -686,10 +686,10 @@ def wait_altdisk_install(module, vios, vios_dict, vios_key, altdisk_op_tab, err_
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def alt_disk_action(module, action, targets, vios_status):
+def alt_disk_action(module, action, targets, vios_status, time_limit):
     """
     alt_dik_copy / alt_disk_clean operation
-    
+
     For each VIOS tuple,
     - retrieve the previous status if any (looking for SUCCESS-HC and SUCCESS-UPDT1)
     - for each VIOS of the tuple, find and valid the hdisk for the operation
@@ -725,6 +725,8 @@ def alt_disk_action(module, action, targets, vios_status):
         else:
             vios_key = vios1
 
+        logging.debug('vios_key: {}'.format(vios_key))
+
         # if health check status is known, check the vios tuple has passed
         # the health check successfuly
         if not (vios_status is None):
@@ -733,23 +735,31 @@ def alt_disk_action(module, action, targets, vios_status):
                 OUTPUT.append("    {} vioses skiped (no previous status found)". \
                                format(vios_key))
                 logging.warn("{} vioses skiped (no previous status found)". \
-                              format(vios_key)) 
+                              format(vios_key))
                 continue
 
             elif vios_status[vios_key] != 'SUCCESS-HC' and vios_status[vios_key] != 'SUCCESS-UPDT1':
                 altdisk_op_tab[vios_key] = vios_status[vios_key]
-                OUTPUT.append("    {} vioses skiped (health check failed)". \
+                OUTPUT.append("    {} vioses skiped (vios_status[vios_key])". \
                                format(vios_key))
-                logging.warn("{} vioses skiped (health check failed)". \
-                              format(vios_key)) 
+                logging.warn("{} vioses skiped (vios_status[vios_key])". \
+                              format(vios_key))
                 continue
+
+        # check if there is time to handle this tuple
+        if not (time_limit is None) and time.localtime(time.time()) >= time_limit:
+            altdisk_op_tab[vios_key] = "SKIPPED-TIMEDOUT"
+            time_limit_str = time.strftime("%m/%d/%Y %H:%M", time_limit)
+            OUTPUT.append("    Time limit {} reached, no further operation". \
+                    format(time_limit_str))
+            logging.info('Time limit {} reached, no further operation'. \
+                    format(time_limit_str))
+            continue
 
         altdisk_op_tab[vios_key] = "SUCCESS-ALTDC"
 
         # TBC - Uncomment for testing without effective altdisk operation
         # continue
-        
-        logging.debug('vios_key: {}'.format(vios_key))
 
         for vios in vios_dict.keys():
 
@@ -764,7 +774,7 @@ def alt_disk_action(module, action, targets, vios_status):
                     err_label = "FAILURE-ALTDCLEAN2"
 
             hdisk = find_valid_altdisk(module, action, vios, vios_dict, vios_key, altdisk_op_tab, err_label)
-            if hdisk is None: 
+            if hdisk is None:
                 break
             else:
                 OUTPUT.append('    Using {} as alternate disk on {}'.format(vios_dict[vios], vios))
@@ -785,7 +795,7 @@ def alt_disk_action(module, action, targets, vios_status):
                     msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
                             format(cmd, excep.args, std_out, std_err)
                     module.fail_json(msg=msg)
-                
+
                 # continue with next target_tuple if alt_disk_copy failed
                 if proc.returncode != 0:
                     altdisk_op_tab[vios_key] = "{} to copy {} on {}".format(err_label, vios_dict[vios], vios)
@@ -832,7 +842,7 @@ def alt_disk_action(module, action, targets, vios_status):
                 OUTPUT.append('    Clean the PVID and LVM info of {} on {}'.format(hdisk, vios))
                 cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} \
                         '/etc/chdev -a pv=clear -l {}; \
-						 /usr/bin/dd if=/dev/zero of=/dev/{}  seek=7 count=1 bs=512'". \
+                         /usr/bin/dd if=/dev/zero of=/dev/{}  seek=7 count=1 bs=512'". \
                         format(NIM_NODE['nim_vios'][vios]['vios_ip'], hdisk, hdisk)
                 try:
                     (std_out, std_err) = ("", "")
@@ -867,7 +877,6 @@ if __name__ == '__main__':
     NIM_NODE = {}
     CHANGED = False
     targets_list = []
-    
 
     module = AnsibleModule(
         argument_spec=dict(
@@ -876,6 +885,7 @@ if __name__ == '__main__':
             action=dict(required=True,
                         choices=['alt_disk_copy', 'alt_disk_clean'],
                         type='str'),
+            time_limit=dict(required=False, type='str'),
             vios_status=dict(required=False, type='dict'),
             nim_node=dict(required=False, type='dict'),
         ),
@@ -903,6 +913,9 @@ if __name__ == '__main__':
     PARAMS['targets'] = targets
     PARAMS['Description'] = description
 
+    if module.params['time_limit']:
+        time_limit = module.params['time_limit']
+
     OUTPUT.append('VIOS Alternate disk operation for {}'.format(targets))
     logging.info('action {} for {} targets'.format(action, targets))
 
@@ -910,9 +923,7 @@ if __name__ == '__main__':
     targets_altdisk_status = {}
     target_list = []
 
-    # =========================================================================
     # build nim node info
-    # =========================================================================
     if module.params['nim_node']:
         NIM_NODE = module.params['nim_node']
     else:
@@ -923,6 +934,21 @@ if __name__ == '__main__':
     else:
         vios_status = None
 
+    # build a time structurei for time_limit attribute,
+    # the date can be omitted if sameday
+    time_limit = None
+    if module.params['time_limit']:
+        match_key = re.match(r"^\S*\d{2}/\d{2}/\d{4} \S*\d{2}:\d{2}\S*$", module.params['time_limit'])
+        if match_key:
+            time_limit = time.strptime(module.params['time_limit'], '%m/%d/%Y %H:%M')
+        else:
+            msg = 'Malformed time limit "{}", please use mm/dd/yyyy hh:mm format.'. \
+                    format(module.params['time_limit'])
+            module.fail_json(msg=msg)
+
+    # =========================================================================
+    # Perfom check and operation
+    # =========================================================================
     ret = check_vios_targets(targets)
     if (ret is None) or (not ret):
         OUTPUT.append('    Warning: Empty target list')
@@ -935,7 +961,7 @@ if __name__ == '__main__':
         logging.debug('Targets list: {}'.format(target_list))
 
         targets_altdisk_status = alt_disk_action(module, action, target_list,
-                                                 vios_status)
+                                                 vios_status, time_limit)
 
         if targets_altdisk_status:
             OUTPUT.append('VIOS Alternate disk operation status:')
