@@ -41,15 +41,18 @@
 
     - debug: var=updt_result.output
 
-    - name: "AIX VIOS ALT DISK CLEANUP"
-      aix_nim_vios_alt_disk:
-        description: 'Remove the altinst_rootvg from the alternate disk'
-        targets: "(gdrh10v1,hdisk1) (gdrh10v2,hdisk2) (gdrh9v1,hdisk3) g(gdrh9v2,hdisk4)"
-        action: alt_disk_clean
-        vios_status: "{{ updt_result.status }}"
+    ## Uncommented this section to perfom a cleanup, but be careful
+    ## because this would remove the alternate rootvg which is your
+    ## backup.
+    #- name: "AIX VIOS ALT DISK CLEANUP"
+    #- aix_nim_vios_alt_disk:
+    #-   description: 'Remove the altinst_rootvg from the alternate disk'
+    #-   targets: "(gdrh10v1,hdisk1) (gdrh10v2,hdisk2) (gdrh9v1,hdisk3) g(gdrh9v2,hdisk4)"
+    #-   action: alt_disk_clean
+    #-   vios_status: "{{ updt_result.status }}"
 
-      register: altdisk_result
+    #- register: altdisk_result
 
-    - debug: var=altdisk_result.output
+    #- debug: var=altdisk_result.output
 
 
