@@ -48,47 +48,101 @@ Note - alt_disk_copy only backs up mounted file systems. Mount all file systems 
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def exec_cmd(cmd, module):
+def exec_cmd(cmd, module, exit_on_error, debug_data=True):
     """
     Execute the given command
-        - cmd     array of the command parameters
-        - module  the module variable
+        - cmd           array of the command parameters
+        - module        the module variable
+        - exit_on_error execption is raised if true and cmd return !0
+        - debug_data    prints some trace in DEBUG_DATA if set
 
     In case of error set an error massage and fails the module
 
     return
-        - ret_code  (0)
-        - std_out   output of the command
+        - ret_code  (return code of the command)
+        - output   output of the command
     """
 
     global DEBUG_DATA
 
-    std_out = ''
-    std_err = ''
+    rc = 0
+    output = ''
 
     logging.debug('exec command:{}'.format(cmd))
     try:
-        std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+
     except subprocess.CalledProcessError as exc:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-               format(cmd, exc.cmd, exc.output, exc.returncode)
-        # module.fail_json(msg=msg)
-        # TBC
-        return (1, " ")
+        # exception for rc != 0 can be cached if exit_on_error is set
+        output = exc.output
+        rc = exc.returncode
+        if exit_on_error == True:
+            msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'. \
+                    format(cmd, exc.cmd, rc, output)
+            module.fail_json(msg=msg)
+
     except Exception as exc:
+        # uncatched exception
+        msg = 'Command: {} Exception.Args{}'. \
+               format(cmd, exc.args)
+        module.fail_json(msg=msg)
+
+    if rc == 0:
+        if debug_data == True:
+            DEBUG_DATA.append('exec command:{}'.format(cmd))
+        logging.debug('exec command output:{}'.format(output))
+    else:
+        if debug_data == True:
+            DEBUG_DATA.append('exec command rc:{}, stderr:{}'.format(rc, output))
+        logging.debug('exec command rc:{}, stderr:{}'.format(rc, output))
+
+    return (rc, output)
+
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
+def exec_shell_cmd(cmd, module, debug_data=True):
+    """
+    Execute the given command with the shell
+        - cmd       array of the command parameters
+        - module    the module variable
+    One should use this for ioscli commands instead of exec_cmd
+
+    In case of error set an error massage and fails the module
+
+    return
+        - ret_code              (return code of the command)
+        - std_out or std_err    output of the command
+    """
+
+    global DEBUG_DATA
+
+    rc = 0
+    (std_out, std_err) = ("", "")
+
+    logging.debug('exec command:{}'.format(cmd))
+    try:
+        proc = subprocess.Popen(cmd, shell=True, stdin=None, \
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+        (std_out, std_err) = proc.communicate()
+
+    except Exception as exc:
+        # uncatched exception
         msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-               format(cmd, exc.args, std_out, std_err)
-        # module.fail_json(msg=msg)
-        return (1, " ")
+                format(cmd, excep.args, std_out, std_err)
+        module.fail_json(msg=msg)
 
-    # DEBUG
-    DEBUG_DATA.append('exec command:{}'.format(cmd))
-    DEBUG_DATA.append('exec command stderr:{}'.format(std_err))
-    logging.debug('exec command stderr:{}'.format(std_err))
-    logging.debug('exec command output:{}'.format(std_out))
-    # --------------------------------------------------------
-
-    return (0, std_out)
+    rc = proc.returncode
+    if debug_data == True:
+        DEBUG_DATA.append('exec command:{}'.format(cmd))
+    if rc == 0:
+        logging.debug('exec command output:{}'.format(std_out))
+        return (rc, std_out)
+    else:
+        if debug_data == True:
+            DEBUG_DATA.append('exec command rc:{}, stderr:{}'.format(rc, std_err))
+        logging.debug('exec command rc:{}, stderr:{}'.format(rc, std_err))
+        return (rc, std_err)
 
 
 # ----------------------------------------------------------------
@@ -101,20 +155,12 @@ def get_hmc_info(module):
 
     return a dic with hmc info
     """
+    ret = 0
     std_out = ''
-    std_err = ''
     info_hash = {}
 
     cmd = ['lsnim', '-t', 'hmc', '-l']
-
-    try:
-        proc = subprocess.Popen(cmd, shell=False, stdin=None,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (std_out, std_err) = proc.communicate()
-    except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
+    (ret, std_out) = exec_cmd(cmd, module, exit_on_error=True)
 
     obj_key = ''
     for line in std_out.rstrip().split('\n'):
@@ -159,20 +205,12 @@ def get_nim_clients_info(module, lpar_type):
     return the list of the name of the lpar objects defined on the
            nim master and their associated cstate value
     """
+    ret = 0
     std_out = ''
-    std_err = ''
     info_hash = {}
 
     cmd = ['lsnim', '-t', lpar_type, '-l']
-
-    try:
-        proc = subprocess.Popen(cmd, shell=False, stdin=None,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (std_out, std_err) = proc.communicate()
-    except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
+    (ret, std_out) = exec_cmd(cmd, module, exit_on_error=True)
 
     # lpar name and associated Cstate
     obj_key = ""
@@ -334,25 +372,19 @@ def get_pvs(module, vios):
 
     logging.debug('vios: {}'.format(vios))
 
+    ret = 0
+    std_out = ''
     pvs = {}
 
     cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '/usr/ios/cli/ioscli lspv'". \
             format(NIM_NODE['nim_vios'][vios]['vios_ip'])
-    try:
-        (std_out, std_err) = ("", "")
-        proc = subprocess.Popen(cmd, shell=True, stdin=None, \
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (std_out, std_err) = proc.communicate()
-    except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
+    (ret, std_out) = exec_shell_cmd(cmd, module)
 
-    if proc.returncode != 0:
-        OUTPUT.append('    Failed to get the PV list on {}, lspv returns: {} {}'. \
-                format(vios, proc.returncode, std_err))
+    if ret != 0:
+        OUTPUT.append('    Failed to get the PV list on {}, lspv returns: {}'. \
+                format(vios, std_out))
         logging.error('Failed to get the PV list on {}, lspv returns: {} {}'. \
-                format(vios, proc.returncode, std_err))
+                format(vios, ret, std_out))
         return None
 
     # NAME             PVID                                 VG               STATUS
@@ -385,25 +417,19 @@ def get_free_pvs(module, vios):
 
     logging.debug('vios: {}'.format(vios))
 
+    ret = 0
+    std_out = ''
     free_pvs = {}
 
     cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '/usr/ios/cli/ioscli lspv -free'". \
             format(NIM_NODE['nim_vios'][vios]['vios_ip'])
-    try:
-        (std_out, std_err) = ("", "")
-        proc = subprocess.Popen(cmd, shell=True, stdin=None, \
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (std_out, std_err) = proc.communicate()
-    except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
+    (ret, std_out) = exec_shell_cmd(cmd, module)
 
-    if proc.returncode != 0:
+    if ret != 0:
         OUTPUT.append('    Failed to get the list of free PV on {}: {}'. \
-                format(vios, proc.returncode, std_err))
+                format(vios, std_out))
         logging.error('Failed to get the list of free PVs on {}, lspv returns: {} {}'. \
-                format(vios, proc.returncode, std_err))
+                format(vios, ret, std_out))
         return None
 
     # NAME            PVID                                SIZE(megabytes)
@@ -437,25 +463,19 @@ def get_vg_size(module, vios, vg_name):
 
     logging.debug('vios: {}'.format(vios))
 
+    ret = 0
+    std_out = ''
     vg_size = -1
 
     cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '/usr/ios/cli/ioscli lsvg {}'". \
             format(NIM_NODE['nim_vios'][vios]['vios_ip'], vg_name)
-    try:
-        (std_out, std_err) = ("", "")
-        proc = subprocess.Popen(cmd, shell=True, stdin=None, \
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (std_out, std_err) = proc.communicate()
-    except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
+    (ret, std_out) = exec_shell_cmd(cmd, module)
 
-    if proc.returncode != 0:
-        OUTPUT.append('    Failed to get the {} VG size on {}, lsvg returns: {} {}'. \
-                format(vg_name, vios, proc.returncode, std_err))
+    if ret != 0:
+        OUTPUT.append('    Failed to get the {} VG size on {}, lsvg returns: {}'. \
+                format(vg_name, vios, std_out))
         logging.error('Failed to get the {} VG size on {}, lsvg returns: {} {}'. \
-                format(vg_name, vios, proc.returncode, std_err))
+                format(vg_name, vios, ret, std_out))
         return -1
 
     # parse lsvg outpout to get the size in megabytes:
@@ -622,22 +642,14 @@ def wait_altdisk_install(module, vios, vios_dict, vios_key, altdisk_op_tab, err_
         wait_time += 10
 
         cmd = ['lsnim', '-Z', '-a',  'Cstate', '-a',  'info', '-a',  'Cstate_result', vios]
-        try:
-            (std_out, std_err) = ("", "")
-            proc = subprocess.Popen(cmd, shell=False, stdin=None, \
-                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (std_out, std_err) = proc.communicate()
-        except Exception as excep:
-            msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                    format(cmd, excep.args, std_out, std_err)
-            module.fail_json(msg=msg)
+        (ret, std_out) = exec_cmd(cmd, module, exit_on_error=False, debug_data=False)
 
-        if proc.returncode != 0:
+        if ret != 0:
             altdisk_op_tab[vios_key] = "{} to get the NIM state for {}".format(err_label, vios)
             OUTPUT.append('    Failed to get the NIM state for {}: {}'. \
-                    format(vios, std_err))
+                    format(vios, std_out))
             logging.error('Failed to get the NIM state for {}: {}'. \
-                    format(vios, std_err))
+                    format(vios, std_out))
             break
 
         # info attribute (that appears in 3rd possition) can be empty. So stdout looks like:
@@ -784,30 +796,24 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                 OUTPUT.append('    Alternate disk copy on {}'.format(vios))
 
                 # alt_disk_copy
+                ret = 0
+                std_out = ''
                 cmd = "/usr/sbin/nim -o alt_disk_install -a source=rootvg \
                        -a disk={} -a set_bootlist=no -a boot_client=no {}". \
                        format(vios_dict[vios], vios)
-                try:
-                    proc = subprocess.Popen(cmd, shell=True, stdin=None, \
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    (std_out, std_err) = proc.communicate()
-                except Exception as excep:
-                    msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                            format(cmd, excep.args, std_out, std_err)
-                    module.fail_json(msg=msg)
+                (ret, std_out) = exec_shell_cmd(cmd, module)
 
-                # continue with next target_tuple if alt_disk_copy failed
-                if proc.returncode != 0:
+                if ret != 0:
                     altdisk_op_tab[vios_key] = "{} to copy {} on {}".format(err_label, vios_dict[vios], vios)
                     OUTPUT.append('    Failed to copy {} on {}: {}'. \
-                            format(vios_dict[vios], vios, std_err))
+                            format(vios_dict[vios], vios, std_out))
                     logging.error('Failed to copy {} on {}: {}'. \
-                            format(vios_dict[vios], vios, std_err))
+                            format(vios_dict[vios], vios, std_out))
                     break
 
                 # wait till alt_disk_install ends
-                res = wait_altdisk_install(module, vios, vios_dict, vios_key, altdisk_op_tab, err_label)
-                if res != 0:
+                ret = wait_altdisk_install(module, vios, vios_dict, vios_key, altdisk_op_tab, err_label)
+                if ret != 0:
                     # timed out or an error occured, continue with next target_tuple
                     break
 
@@ -816,45 +822,33 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
 
                 # First remove the alternate VG
                 OUTPUT.append('    Remove altinst_rootvg from {} of {}'.format(hdisk, vios))
+                ret = 0
+                std_out = ''
                 cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} \
                         '/usr/sbin/alt_rootvg_op -X altinst_rootvg'". \
                         format(NIM_NODE['nim_vios'][vios]['vios_ip'])
-                try:
-                    (std_out, std_err) = ("", "")
-                    proc = subprocess.Popen(cmd, shell=True, stdin=None, \
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    (std_out, std_err) = proc.communicate()
-                except Exception as excep:
-                    msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                            format(cmd, excep.args, std_out, std_err)
-                    module.fail_json(msg=msg)
+                (ret, std_out) = exec_shell_cmd(cmd, module)
 
-                if proc.returncode != 0:
+                if ret != 0:
                     altdisk_op_tab[vios_key] = "{} to remove altinst_rootvg on {}". \
                         format(err_label, vios)
                     OUTPUT.append('    Failed to remove altinst_rootvg on {}: {}'. \
-                        format(vios, std_err))
+                        format(vios, std_out))
                     logging.error('Failed to remove altinst_rootvg on {}: {}'. \
-                        format(vios, std_err))
+                        format(vios, std_out))
                     break
 
                 # Clear the hdisk PVID and the LVM info on the disk itself
                 OUTPUT.append('    Clean the PVID and LVM info of {} on {}'.format(hdisk, vios))
+                ret = 0
+                std_out = ''
                 cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} \
                         '/etc/chdev -a pv=clear -l {}; \
                          /usr/bin/dd if=/dev/zero of=/dev/{}  seek=7 count=1 bs=512'". \
                         format(NIM_NODE['nim_vios'][vios]['vios_ip'], hdisk, hdisk)
-                try:
-                    (std_out, std_err) = ("", "")
-                    proc = subprocess.Popen(cmd, shell=True, stdin=None, \
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                    (std_out, std_err) = proc.communicate()
-                except Exception as excep:
-                    msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                            format(cmd, excep.args, std_out, std_err)
-                    module.fail_json(msg=msg)
+                (ret, std_out) = exec_shell_cmd(cmd, module)
 
-                if proc.returncode != 0:
+                if ret != 0:
                     altdisk_op_tab[vios_key] = "{} to clean {} PVID of {} on {}". \
                         format(err_label, vios_dict[vios], hdisk, vios)
                     OUTPUT.append('    Failed to clean {} PVID of {} on {}: {}'. \
