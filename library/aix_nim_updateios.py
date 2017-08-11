@@ -182,13 +182,16 @@ def get_updateios_cmd(module):
             cmd += ['-a', 'updateios_flags=%s' %(module.params['updateios_flags'])]
 
             if module.params['updateios_flags'] == "-remove":
-                if module.params['filesets'] != "none":
+                if module.params['filesets']:
                     cmd += ['-a', 'filesets=%s' %(module.params['filesets'])]
-                elif module.params['installp_bundle'] != "none":
+                elif module.params['installp_bundle']:
                     cmd += ['-a', 'installp_bundle=%s' %(module.params['installp_bundle'])]
-        else:
-            logging.info('VIO UPDATE - filesets {} and installp_bundle {} have been discarded'.format(module.params['filesets'], module.params['installp_bundle']))
-            OUTPUT.append('Any installp_bundle or filesets have been discarded')
+                else:
+                    logging.error('NIM - Error: either filesets or installp_bundle must be specified for the -remove operation')
+                    module.fail_json(msg="NIM - Error: either filesets or installp_bundle must be specified for the -remove operation")
+            else:
+                logging.info('VIO UPDATE - filesets {} and installp_bundle {} have been discarded'.format(module.params['filesets'], module.params['installp_bundle']))
+                OUTPUT.append('Any installp_bundle or filesets have been discarded')
 
     # preview mode
     if module.params['preview']:
@@ -226,8 +229,9 @@ def nim_updateios(module):
     if ret != 0:
         logging.error('Error: NIM Command: {} failed with return code {}'.format(cmd, ret))
         OUTPUT.append("FAILURE")
+    else:
+        OUTPUT.append("SUCCESS")
 
-    OUTPUT.append("SUCCESS")
     CHANGED = True
 
     return ret
