@@ -48,7 +48,7 @@ Note - alt_disk_copy only backs up mounted file systems. Mount all file systems 
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def exec_cmd(cmd, module, exit_on_error, debug_data=True):
+def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
     """
     Execute the given command
         - cmd           array of the command parameters
@@ -70,7 +70,8 @@ def exec_cmd(cmd, module, exit_on_error, debug_data=True):
 
     logging.debug('exec command:{}'.format(cmd))
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        #output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=use_shell)
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT) 
 
     except subprocess.CalledProcessError as exc:
         # exception for rc != 0 can be cached if exit_on_error is set
@@ -97,52 +98,6 @@ def exec_cmd(cmd, module, exit_on_error, debug_data=True):
         logging.debug('exec command rc:{}, stderr:{}'.format(rc, output))
 
     return (rc, output)
-
-# ----------------------------------------------------------------
-# ----------------------------------------------------------------
-def exec_shell_cmd(cmd, module, debug_data=True):
-    """
-    Execute the given command with the shell
-        - cmd       array of the command parameters
-        - module    the module variable
-    One should use this for ioscli commands instead of exec_cmd
-
-    In case of error set an error massage and fails the module
-
-    return
-        - ret_code              (return code of the command)
-        - std_out or std_err    output of the command
-    """
-
-    global DEBUG_DATA
-
-    rc = 0
-    (std_out, std_err) = ("", "")
-
-    logging.debug('exec command:{}'.format(cmd))
-    try:
-        proc = subprocess.Popen(cmd, shell=True, stdin=None, \
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-        (std_out, std_err) = proc.communicate()
-
-    except Exception as exc:
-        # uncatched exception
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
-
-    rc = proc.returncode
-    if debug_data == True:
-        DEBUG_DATA.append('exec command:{}'.format(cmd))
-    if rc == 0:
-        logging.debug('exec command output:{}'.format(std_out))
-        return (rc, std_out)
-    else:
-        if debug_data == True:
-            DEBUG_DATA.append('exec command rc:{}, stderr:{}'.format(rc, std_err))
-        logging.debug('exec command rc:{}, stderr:{}'.format(rc, std_err))
-        return (rc, std_err)
 
 
 # ----------------------------------------------------------------
@@ -376,9 +331,10 @@ def get_pvs(module, vios):
     std_out = ''
     pvs = {}
 
-    cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '/usr/ios/cli/ioscli lspv'". \
-            format(NIM_NODE['nim_vios'][vios]['vios_ip'])
-    (ret, std_out) = exec_shell_cmd(cmd, module)
+    cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', \
+            NIM_NODE['nim_vios'][vios]['vios_ip'], \
+            '"/usr/ios/cli/ioscli lspv"']
+    (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
         OUTPUT.append('    Failed to get the PV list on {}, lspv returns: {}'. \
@@ -421,9 +377,10 @@ def get_free_pvs(module, vios):
     std_out = ''
     free_pvs = {}
 
-    cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '/usr/ios/cli/ioscli lspv -free'". \
-            format(NIM_NODE['nim_vios'][vios]['vios_ip'])
-    (ret, std_out) = exec_shell_cmd(cmd, module)
+    cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', \
+            NIM_NODE['nim_vios'][vios]['vios_ip'], \
+            '"/usr/ios/cli/ioscli lspv -free"']
+    (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
         OUTPUT.append('    Failed to get the list of free PV on {}: {}'. \
@@ -467,9 +424,10 @@ def get_vg_size(module, vios, vg_name):
     std_out = ''
     vg_size = -1
 
-    cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '/usr/ios/cli/ioscli lsvg {}'". \
-            format(NIM_NODE['nim_vios'][vios]['vios_ip'], vg_name)
-    (ret, std_out) = exec_shell_cmd(cmd, module)
+    cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', \
+            NIM_NODE['nim_vios'][vios]['vios_ip'], \
+            '"/usr/ios/cli/ioscli lsvg {}"'.format(vg_name)]
+    (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
         OUTPUT.append('    Failed to get the {} VG size on {}, lsvg returns: {}'. \
@@ -641,8 +599,9 @@ def wait_altdisk_install(module, vios, vios_dict, vios_key, altdisk_op_tab, err_
         time.sleep(10)
         wait_time += 10
 
-        cmd = ['lsnim', '-Z', '-a',  'Cstate', '-a',  'info', '-a',  'Cstate_result', vios]
-        (ret, std_out) = exec_cmd(cmd, module, exit_on_error=False, debug_data=False)
+        cmd = ['lsnim', '-Z', '-a',  'Cstate', '-a',  'info', \
+                '-a',  'Cstate_result', vios]
+        (ret, std_out) = exec_cmd(cmd, module, debug_data=False)
 
         if ret != 0:
             altdisk_op_tab[vios_key] = "{} to get the NIM state for {}".format(err_label, vios)
@@ -798,10 +757,10 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                 # alt_disk_copy
                 ret = 0
                 std_out = ''
-                cmd = "/usr/sbin/nim -o alt_disk_install -a source=rootvg \
-                       -a disk={} -a set_bootlist=no -a boot_client=no {}". \
-                       format(vios_dict[vios], vios)
-                (ret, std_out) = exec_shell_cmd(cmd, module)
+                cmd = ['/usr/sbin/nim', '-o', 'alt_disk_install',\
+                        '-a', 'source=rootvg', '-a', 'disk={}'.format(vios_dict[vios]),\
+                        '-a', 'set_bootlist=no', '-a', 'boot_client=no', vios]
+                (ret, std_out) = exec_cmd(cmd, module)
 
                 if ret != 0:
                     altdisk_op_tab[vios_key] = "{} to copy {} on {}".format(err_label, vios_dict[vios], vios)
@@ -824,10 +783,10 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                 OUTPUT.append('    Remove altinst_rootvg from {} of {}'.format(hdisk, vios))
                 ret = 0
                 std_out = ''
-                cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} \
-                        '/usr/sbin/alt_rootvg_op -X altinst_rootvg'". \
-                        format(NIM_NODE['nim_vios'][vios]['vios_ip'])
-                (ret, std_out) = exec_shell_cmd(cmd, module)
+                cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', \
+                        NIM_NODE['nim_vios'][vios]['vios_ip'], \
+                        '"/usr/sbin/alt_rootvg_op -X altinst_rootvg"']
+                (ret, std_out) = exec_cmd(cmd, module)
 
                 if ret != 0:
                     altdisk_op_tab[vios_key] = "{} to remove altinst_rootvg on {}". \
@@ -842,11 +801,11 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                 OUTPUT.append('    Clean the PVID and LVM info of {} on {}'.format(hdisk, vios))
                 ret = 0
                 std_out = ''
-                cmd = "/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} \
-                        '/etc/chdev -a pv=clear -l {}; \
-                         /usr/bin/dd if=/dev/zero of=/dev/{}  seek=7 count=1 bs=512'". \
-                        format(NIM_NODE['nim_vios'][vios]['vios_ip'], hdisk, hdisk)
-                (ret, std_out) = exec_shell_cmd(cmd, module)
+                cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', \
+                        NIM_NODE['nim_vios'][vios]['vios_ip'], \
+                        '"/etc/chdev -a pv=clear -l {}; /usr/bin/dd if=/dev/zero of=/dev/{}  seek=7 count=1 bs=512"'.\
+                        format(hdisk, hdisk)]
+                (ret, std_out) = exec_cmd(cmd, module)
 
                 if ret != 0:
                     altdisk_op_tab[vios_key] = "{} to clean {} PVID of {} on {}". \
