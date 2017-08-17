@@ -38,8 +38,6 @@ author: "Patrice Jacquin, Vianney Robin"
 version_added: "1.0.0"
 requirements: [ AIX ]
 
-TBC - Does proc.communicate set the return code with the command's return code? (seems to get 0 even we get "command not found" in stderr)
-
 Note - alt_disk_copy only backs up mounted file systems. Mount all file systems that you want to back up.
      - copy is performed only on one alternate hdisk even if the rootvg contains multiple hdisks
      - error if several altinst_rootvg exist for cleanup operation in automatic mode
@@ -830,6 +828,7 @@ if __name__ == '__main__':
     NIM_NODE = {}
     CHANGED = False
     targets_list = []
+    VARS = {}
 
     module = AnsibleModule(
         argument_spec=dict(
@@ -839,17 +838,13 @@ if __name__ == '__main__':
                         choices=['alt_disk_copy', 'alt_disk_clean'],
                         type='str'),
             time_limit=dict(required=False, type='str'),
+            vars=dict(required=False, type='dict'),
             vios_status=dict(required=False, type='dict'),
             nim_node=dict(required=False, type='dict'),
         ),
         supports_check_mode=True
     )
 
-    # Open log file
-    logging.basicConfig(filename='/tmp/ansible_vios_alt_disk_debug.log', format= \
-        '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s', \
-        level=logging.DEBUG)
-    logging.debug('*** START VIOS ALT_DISK operation ***')
 
     # =========================================================================
     # Get Module params
@@ -860,14 +855,32 @@ if __name__ == '__main__':
     if module.params['description']:
         description = module.params['description']
     else:
-        description = "VIOS ALT_DISK - operation: {} request".format(action)
+        description = "Perform an alternate disk operation: {} request".format(action)
 
+    if module.params['description']:
+        description = module.params['description']
+    else:
+        description = "vios alt_disk - operation: {} request".format(action)
     PARAMS['action'] = action
     PARAMS['targets'] = targets
     PARAMS['Description'] = description
 
     if module.params['time_limit']:
         time_limit = module.params['time_limit']
+
+    # Handle playbook variables
+    if module.params['vars']:
+        VARS = module.params['vars']
+    if not VARS == None and not VARS.has_key('log_file'):
+        VARS['log_file'] = '/tmp/ansible_vios_alt_disk_debug.log'
+
+    # Open log file
+    DEBUG_DATA.append('Logging file: {}'.format(VARS['log_file']))
+    logging.basicConfig(filename="{}".format(VARS['log_file']), format= \
+        '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s', \
+        level=logging.DEBUG)
+
+    logging.debug('*** START VIOS {} ***'.format(action.upper()))
 
     OUTPUT.append('VIOS Alternate disk operation for {}'.format(targets))
     logging.info('action {} for {} targets'.format(action, targets))
