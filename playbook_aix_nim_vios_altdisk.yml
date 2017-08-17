@@ -2,6 +2,8 @@
 - name: "VIOS alternate disk copy on AIX"
   hosts: all
   gather_facts: no
+  vars:
+    log_file: "/tmp/ansible_vios_alt_disk_debug.log"
 
   tasks:
     - name: "AIX VIOS ALT DISK COPY"
@@ -9,6 +11,7 @@
         description: 'Perform an alternate disk copy on VIOS'
         targets: "(gdrh9v1,hdisk1,gdrh9v2,hdisk2)"
         action: alt_disk_copy
+        vars: "{{ vars }}"
         #time_limit: "mm/dd/yyyy hh:mm"
 
       register: altdisk_copy_result
@@ -20,6 +23,7 @@
         description: 'Remove the altinst_rootvg from the alternate disk'
         targets: "(gdrh9v1,hdisk1,gdrh9v2,)"
         action: alt_disk_clean
+        vars: "{{ vars }}"
         vios_status: "{{ altdisk_copy_result.status }}"
 
       register: altdisk_result
