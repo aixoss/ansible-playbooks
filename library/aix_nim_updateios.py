@@ -251,9 +251,6 @@ def nim_updateios(module, vios_status, update_op_tab, time_limit):
     # ret, std_out = exec_cmd(cmd)
     ret, std_out = exec_cmd(cmd)
 
-    logging.info('[RC] {}'.format(ret))
-    logging.info('[STDOUT] {}'.format(std_out))
-
     if ret != 0:
         logging.error('Error: NIM Command: {} failed with return code {}'.format(cmd, ret))
         OUTPUT.append("FAILURE")
@@ -275,9 +272,11 @@ if __name__ == '__main__':
     DEBUG_DATA = []
     OUTPUT = []
     CHANGED = False
+    VARS = {}
 
     module = AnsibleModule(
         argument_spec=dict(
+            description=dict(required=False, type='str'),
             targets=dict(required=True, type='str'),
             filesets=dict(required=False, type='str'),
             installp_bundle=dict(required=False, type='str'),
@@ -286,14 +285,10 @@ if __name__ == '__main__':
             updateios_flags=dict(required=True, type='str'),
             preview=dict(required=False, type='str'),
             time_limit=dict(required=False, type='str'),
+            vars=dict(required=False, type='dict'),
             vios_status=dict(required=False, type='dict')
         )
     )
-
-    # Open log file
-    LOGNAME = '/tmp/ansible_updateios_debug.log'
-    LOGFRMT = '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s'
-    logging.basicConfig(filename=LOGNAME, format=LOGFRMT, level=logging.DEBUG)
 
     targets_update_status = {}
     vios_status = {}
@@ -318,19 +313,35 @@ if __name__ == '__main__':
                     format(module.params['time_limit'])
             module.fail_json(msg=msg)
 
+    # Handle playbook variables
+    LOGNAME = '/tmp/ansible_updateios_debug.log'
+    if module.params['vars']:
+        VARS = module.params['vars']
+    if not VARS == None and not VARS.has_key('log_file'):
+        VARS['log_file'] = LOGNAME
+
+    # Open log file
+    DEBUG_DATA.append('Log file: {}'.format(VARS['log_file']))
+    LOGFRMT = '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s'
+    logging.basicConfig(filename="{}".format(VARS['log_file']), \
+            format=LOGFRMT, level=logging.DEBUG)
+
+
     # =========================================================================
     # Perfom the update
     # =========================================================================
 
     logging.debug('*** START NIM VIO UPDATE OPERATION ***')
-    ret = nim_updateios(module, vios_status, targets_update_status, time_limit)
+    OUTPUT.append('VIO Update operation for {}'.format(module.params['targets']))
 
-    logging.info('Done with nim updateios operation')
+    ret = nim_updateios(module, vios_status, targets_update_status, time_limit)
 
     if len(targets_update_status) != 0:
         OUTPUT.append('NIM VIO update operation status:')
+        logging.info('NIM VIO update operation status:')
         for vios_key in targets_update_status.keys():
             OUTPUT.append("    {} : {}".format(vios_key, targets_update_status[vios_key]))
+            logging.info('    {} : {}'.format(vios_key, targets_update_status[vios_key]))
 
         logging.info('NIM VIO update operation result: {}'.format(targets_update_status))
     else:

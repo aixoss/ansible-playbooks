@@ -271,8 +271,8 @@ def check_vios_targets(targets):
         tuple_len = len(tuple_elts)
 
         if tuple_len != 2 and tuple_len != 4:
-            logging.error('Malformed VIOS targets {}. Should be a 2 or 4 elements tuple'. \
-                          format(tuple_elts, tuple_len, targets))
+            logging.error('Malformed VIOS targets {}. Tuple {} should be a 2 or 4 elements.'. \
+                          format(targets, tuple_elts))
             return None
 
         # check vios not already exists in the target list
@@ -289,10 +289,12 @@ def check_vios_targets(targets):
                           format(targets))
             return None
 
-        # check vios is knowed by the NIM master - if not ignore it
+        # check vios is known by the NIM master - if not ignore it
         # because it can concern an other ansible host (nim master)
         if tuple_elts[0] not in NIM_NODE['nim_vios'] or \
            (tuple_len == 4 and  tuple_elts[2] not in NIM_NODE['nim_vios']):
+            logging.debug('skipping {} as VIOS not known by the NIM master.'. \
+                        format(vios_tuple))
             continue
 
         # fill vios_list dictionnary
@@ -857,10 +859,6 @@ if __name__ == '__main__':
     else:
         description = "Perform an alternate disk operation: {} request".format(action)
 
-    if module.params['description']:
-        description = module.params['description']
-    else:
-        description = "vios alt_disk - operation: {} request".format(action)
     PARAMS['action'] = action
     PARAMS['targets'] = targets
     PARAMS['Description'] = description
@@ -875,7 +873,7 @@ if __name__ == '__main__':
         VARS['log_file'] = '/tmp/ansible_vios_alt_disk_debug.log'
 
     # Open log file
-    DEBUG_DATA.append('Logging file: {}'.format(VARS['log_file']))
+    DEBUG_DATA.append('Log file: {}'.format(VARS['log_file']))
     logging.basicConfig(filename="{}".format(VARS['log_file']), format= \
         '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s', \
         level=logging.DEBUG)
@@ -889,7 +887,9 @@ if __name__ == '__main__':
     targets_altdisk_status = {}
     target_list = []
 
+    # =========================================================================
     # build nim node info
+    # =========================================================================
     if module.params['nim_node']:
         NIM_NODE = module.params['nim_node']
     else:
@@ -920,7 +920,6 @@ if __name__ == '__main__':
         OUTPUT.append('    Warning: Empty target list')
         logging.warn('Empty target list for targets {}'. \
                       format(targets))
-
     else:
         target_list = ret
         OUTPUT.append('    Targets list: {}'.format(target_list))
