@@ -78,49 +78,57 @@ def run_oslevel_cmd(machine, result, machine_type):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def exec_cmd(cmd, module):
+def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
     """
     Execute the given command
-        - cmd     array of the command parameters
-        - module  the module variable
+        - cmd           array of the command parameters
+        - module        the module variable
+        - exit_on_error execption is raised if true and cmd return !0
+        - debug_data    prints some trace in DEBUG_DATA if set
 
-    In case of erro set an error massage and fails the module
+    In case of error set an error massage and fails the module
 
     return
-        - ret_code  (0)
-        - std_out   output of the command
+        - ret_code  (return code of the command)
+        - output   output of the command
     """
 
     global DEBUG_DATA
 
-    std_out = ''
-    std_err = ''
-    err_code = 0
+    rc = 0
+    output = ''
 
     logging.debug('exec command:{}'.format(cmd))
+    if debug_data == True:
+        DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
-        std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT) 
+
     except subprocess.CalledProcessError as exc:
-        std_out = exc.output
-        if exc.returncode != 1 and exc.returncode != 2:
-            msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                   format(cmd, exc.cmd, exc.output, exc.returncode)
+        # exception for rc != 0 can be cached if exit_on_error is set
+        output = exc.output
+        rc = exc.returncode
+        if exit_on_error == True:
+            msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'. \
+                    format(cmd, exc.cmd, rc, output)
             module.fail_json(msg=msg)
-        else:
-            err_code = exc.returncode
 
     except Exception as exc:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-               format(cmd, exc.args, exc.output, exc.exc.returncode)
+        # uncatched exception
+        msg = 'Command: {} Exception.Args{}'. \
+               format(cmd, exc.args)
         module.fail_json(msg=msg)
 
-    # DEBUG
-    DEBUG_DATA.append('exec command:{}'.format(cmd))
-    DEBUG_DATA.append('exec command std_err:{}'.format(std_err))
-    logging.debug('exec command output:{}'.format(std_out))
-    logging.debug('exec command std_err:{}'.format(std_err))
+    if rc == 0:
+        if debug_data == True:
+            DEBUG_DATA.append('exec output:{}'.format(output))
+        logging.debug('exec command output:{}'.format(output))
+    else:
+        if debug_data == True:
+            DEBUG_DATA.append('exec command rc:{}, stderr:{}'.format(rc, output))
+        logging.debug('exec command rc:{}, stderr:{}'.format(rc, output))
 
-    return (err_code, std_out)
+    return (rc, output)
 
 
 # ----------------------------------------------------------------
@@ -138,15 +146,7 @@ def get_hmc_info(module):
     info_hash = {}
 
     cmd = ['lsnim', '-t', 'hmc', '-l']
-
-    try:
-        proc = subprocess.Popen(cmd, shell=False, stdin=None,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (std_out, std_err) = proc.communicate()
-    except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
+    (ret, std_out) = exec_cmd(cmd, module)
 
     obj_key = ''
     for line in std_out.rstrip().split('\n'):
@@ -196,15 +196,7 @@ def get_nim_clients_info(module, lpar_type):
     info_hash = {}
 
     cmd = ['lsnim', '-t', lpar_type, '-l']
-
-    try:
-        proc = subprocess.Popen(cmd, shell=False, stdin=None,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (std_out, std_err) = proc.communicate()
-    except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
+    (ret, std_out) = exec_cmd(cmd, module)
 
     # lpar name and associated Cstate
     obj_key = ""
@@ -328,7 +320,7 @@ def check_vios_targets(targets):
 
     vios_list = {}
     vios_list_tuples_res = []
-    vios_list_tuples = targets.replace(" ", "").split('(')
+    vios_list_tuples = targets.replace(" ", "").replace("),(", ")(").split('(')
 
     # ===========================================
     # Build targets list
@@ -389,23 +381,21 @@ def vios_health(module, mgmt_sys_uuid, hmc_login, hmc_passwd, hmc_ip, vios_uuids
     logging.debug('hmc_ip: {} vios_uuids: {}'. \
                   format(hmc_ip, vios_uuids))
 
-    ret = 0
-
     # build the vioshc cmde
     cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-u', hmc_login, \
            '-p', hmc_passwd, '-m', mgmt_sys_uuid]
     for vios in vios_uuids:
         cmd.extend(['-U', vios])
 
-    ret, stdout = exec_cmd(cmd, module)
+    (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
         OUTPUT.append('    VIOS Health check failed, vioshc returns: {} {}'. \
-                      format(ret, stdout))
+                      format(ret, std_out))
         logging.error('VIOS Health check failed, vioshc returns: {} {}'. \
-                      format(ret, stdout))
+                      format(ret, std_out))
         # TBC
         # module.fail_json(msg=msg)
-    elif re.search(r'Pass rate of 100%', stdout, re.M):
+    elif re.search(r'Pass rate of 100%', std_out, re.M):
         OUTPUT.append('    VIOS Health check passed')
         logging.info('vioses {} can be updated'. \
                      format(vios_uuids))
@@ -444,14 +434,14 @@ def vios_health_init(module, hmc_id, hmc_login, hmc_passwd, hmc_ip):
     cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-u', hmc_login, \
            '-p', hmc_passwd, '-l', 'a']
 
-    ret, stdout = exec_cmd(cmd, module)
+    (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
         OUTPUT.append('    Failed to get the VIOS information, vioshc returns: {} {}'. \
-                      format(ret, stdout))
+                      format(ret, std_out))
         logging.error('Failed to get the VIOS information, vioshc returns: {} {}'. \
-                      format(ret, stdout))
+                      format(ret, std_out))
         msg = 'Health init check failed. vioshc command error. rc:{}, error: {}'. \
-                format(ret, stdout)
+                format(ret, std_out)
         module.fail_json(msg=msg)
 
     # Parse the output and store the UUIDs
@@ -459,7 +449,7 @@ def vios_health_init(module, hmc_id, hmc_login, hmc_passwd, hmc_ip):
     vios_section = 0
     cec_uuid = ''
     cec_serial = ''
-    for line in stdout.rstrip().split('\n'):
+    for line in std_out.rstrip().split('\n'):
         # TBC - remove?
         logging.debug('--------line {}'.format(line))
         if vios_section == 0:
@@ -700,7 +690,7 @@ if __name__ == '__main__':
     ret = check_vios_targets(targets)
     if (ret is None) or (not ret):
         OUTPUT.append('    Warning: Empty target list')
-        logging.warn('Empty target list for targets {}'. \
+        logging.warn('Empty target list: "{}"'. \
                       format(targets))
     else:
         targets_list = ret

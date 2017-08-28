@@ -67,8 +67,9 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
     output = ''
 
     logging.debug('exec command:{}'.format(cmd))
+    if debug_data == True:
+        DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
-        #output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=use_shell)
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT) 
 
     except subprocess.CalledProcessError as exc:
@@ -88,7 +89,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
 
     if rc == 0:
         if debug_data == True:
-            DEBUG_DATA.append('exec command:{}'.format(cmd))
+            DEBUG_DATA.append('exec output:{}'.format(output))
         logging.debug('exec command output:{}'.format(output))
     else:
         if debug_data == True:
@@ -113,7 +114,7 @@ def get_hmc_info(module):
     info_hash = {}
 
     cmd = ['lsnim', '-t', 'hmc', '-l']
-    (ret, std_out) = exec_cmd(cmd, module, exit_on_error=True)
+    (ret, std_out) = exec_cmd(cmd, module)
 
     obj_key = ''
     for line in std_out.rstrip().split('\n'):
@@ -163,7 +164,7 @@ def get_nim_clients_info(module, lpar_type):
     info_hash = {}
 
     cmd = ['lsnim', '-t', lpar_type, '-l']
-    (ret, std_out) = exec_cmd(cmd, module, exit_on_error=True)
+    (ret, std_out) = exec_cmd(cmd, module)
 
     # lpar name and associated Cstate
     obj_key = ""
@@ -258,19 +259,20 @@ def check_vios_targets(targets):
 
     vios_list = {}
     vios_list_tuples_res = []
-    vios_list_tuples = targets.replace(" ", "").split('(')
+    vios_list_tuples = targets.replace(" ", "").replace("),(", ")(").split('(')
 
     # ===========================================
     # Build targets list
     # ===========================================
     for vios_tuple in vios_list_tuples[1:]:
-
-        logging.debug('vios_tuple: {}'.format(vios_tuple))
+        logging.debug('Checking vios_tuple: {}'.format(vios_tuple))
 
         tuple_elts = list(vios_tuple[:-1].split(','))
         tuple_len = len(tuple_elts)
 
         if tuple_len != 2 and tuple_len != 4:
+            OUTPUT.append('Malformed VIOS targets {}. Tuple {} should be a 2 or 4 elements.'. \
+                          format(targets, tuple_elts))
             logging.error('Malformed VIOS targets {}. Tuple {} should be a 2 or 4 elements.'. \
                           format(targets, tuple_elts))
             return None
@@ -279,12 +281,16 @@ def check_vios_targets(targets):
         if tuple_elts[0] in vios_list or \
            (tuple_len == 4 and (tuple_elts[2] in vios_list or \
                                 tuple_elts[0] == tuple_elts[2])):
+            OUTPUT.append('Malformed VIOS targets {}. Duplicated VIOS'. \
+                          format(targets))
             logging.error('Malformed VIOS targets {}. Duplicated VIOS'. \
                           format(targets))
             return None
 
         # check if duplicate alt_disk value
         if tuple_len == 4 and tuple_elts[1] == tuple_elts[3]:
+            OUTPUT.append('Malformed VIOS targets {}. Duplicated alternate disks'. \
+                          format(targets))
             logging.error('Malformed VIOS targets {}. Duplicated alternate disks'. \
                           format(targets))
             return None
@@ -662,7 +668,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
     alt_dik_copy / alt_disk_clean operation
 
     For each VIOS tuple,
-    - retrieve the previous status if any (looking for SUCCESS-HC and SUCCESS-UPDT1)
+    - retrieve the previous status if any (looking for SUCCESS-HC and SUCCESS-UPDT)
     - for each VIOS of the tuple, find and valid the hdisk for the operation
     - perform the alt disk copy or cleanup operation
     - wait for the copy to finish
@@ -709,12 +715,12 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                               format(vios_key))
                 continue
 
-            elif vios_status[vios_key] != 'SUCCESS-HC' and vios_status[vios_key] != 'SUCCESS-UPDT1':
+            elif vios_status[vios_key] != 'SUCCESS-HC' and vios_status[vios_key] != 'SUCCESS-UPDT':
                 altdisk_op_tab[vios_key] = vios_status[vios_key]
-                OUTPUT.append("    {} vioses skiped (vios_status[vios_key])". \
-                               format(vios_key))
-                logging.warn("{} vioses skiped (vios_status[vios_key])". \
-                              format(vios_key))
+                OUTPUT.append("    {} vioses skiped ({})". \
+                               format(vios_key, vios_status[vios_key]))
+                logging.warn("{} vioses skiped ({})". \
+                              format(vios_key, vios_status[vios_key]))
                 continue
 
         # check if there is time to handle this tuple
@@ -732,7 +738,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
         # TBC - Uncomment for testing without effective altdisk operation
         # continue
 
-        for vios in vios_dict.keys():
+        for vios in target_tuple:
 
             # set the error label to be used in sub routines
             if action == 'alt_disk_copy':
@@ -918,7 +924,7 @@ if __name__ == '__main__':
     ret = check_vios_targets(targets)
     if (ret is None) or (not ret):
         OUTPUT.append('    Warning: Empty target list')
-        logging.warn('Empty target list for targets {}'. \
+        logging.warn('Empty target list: "{}"'. \
                       format(targets))
     else:
         target_list = ret
