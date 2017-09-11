@@ -7,14 +7,14 @@
 
   tasks:
 
-    - name: "AIX VIOS HEALTH CHECK"
-      aix_nim_vios_hc:
-        description: 'Check the VIOS(es) can be updated'
-        targets: "(gdrh10v1) (gdrh10v2) (gdrh9v1,gdrh9v2)"
-        action: "health_check"
-        vars: "{{ vars }}"
+    #- name: "AIX VIOS HEALTH CHECK"
+    #  aix_nim_vios_hc:
+    #    description: 'Check the VIOS(es) can be updated'
+    #    targets: "(gdrh10v1) (gdrh10v2) (gdrh9v1,gdrh9v2)"
+    #    action: "health_check"
+    #    vars: "{{ vars }}"
 
-      register: hc_result
+    #  register: hc_result
 
 
     - name: "AIX VIOS ALT DISK COPY"
@@ -22,7 +22,7 @@
         description: 'Perform the rootvg copy to an alternate disk'
         targets: "(gdrh10v1,hdisk1) (gdrh10v2,hdisk2) (gdrh9v1,hdisk1,gdrh9v2,hdisk1)"
         action: "alt_disk_copy"
-        vios_status: "{{ hc_result.status }}"
+        #vios_status: "{{ hc_result.status }}"
         vars: "{{ vars }}"
 
       register: altd_result
@@ -50,14 +50,14 @@
     #- name: "AIX VIOS ALT DISK CLEANUP"
     #- aix_nim_vios_alt_disk:
     #    description: 'Remove the altinst_rootvg from the alternate disk'
-    #    targets: "(gdrh10v1,hdisk1) (gdrh10v2,hdisk2) (gdrh9v1,hdisk3) (gdrh9v2,hdisk4)"
+    #    targets: "(gdrh10v1,hdisk1) (gdrh10v2,hdisk2) (gdrh9v1,hdisk1) (gdrh9v2,hdisk1)"
     #    action: alt_disk_clean
     #    vios_status: "{{ updt_result.status }}"
     #    vars: "{{ vars }}"
 
     #- register: altdisk_result
 
-    - debug: var=hc_result.output
+    #- debug: var=hc_result.output
     - debug: var=altd_result.output
     - debug: var=updt_result.output
     #- debug: var=altdisk_result.output
