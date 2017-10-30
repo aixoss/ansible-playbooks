@@ -33,48 +33,7 @@ module: aix_nim_vios_hc
 author: "Patrice Jacquin"
 version_added: "1.0.0"
 requirements: [ AIX ]
-TBC - change the parsing of the return when vioshc.py is ready
-    - HMC password currently hard-coded
 """
-
-
-# ----------------------------------------------------------------
-# ----------------------------------------------------------------
-def run_oslevel_cmd(machine, result, machine_type):
-    """
-    Run command function, command to be 'threaded'.
-
-    The thread then store the outpout in the dedicated slot of the result
-    dictionnary.
-
-    arguments:
-        machine (str):  The machine name
-        result  (dict): The result of the command
-        machine_type (str): the type of the machine (standalone, vios, master)
-
-    return:
-        the result dictionary entry filled with ethe output of the command
-    """
-
-    if machine_type == 'master':
-        cmd = ['/usr/bin/oslevel', '-s']
-
-    elif machine_type == 'standalone':
-        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '/usr/bin/oslevel -s']
-
-    else: # machine_type == 'vios'
-        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               'ioslevel']
-
-    logging.debug('run_oslevel_cmd:{}'.format(cmd))
-
-    proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, \
-                         stderr=subprocess.PIPE)
-
-    # return stdout only ... stripped!
-    result[machine] = proc.communicate()[0].rstrip()
-
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
@@ -95,7 +54,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
 
     global DEBUG_DATA
 
-    rc = 0
+    ret_code = 0
     output = ''
 
     logging.debug('exec command:{}'.format(cmd))
@@ -105,12 +64,12 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT) 
 
     except subprocess.CalledProcessError as exc:
-        # exception for rc != 0 can be cached if exit_on_error is set
+        # exception for ret_code != 0 can be cached if exit_on_error is set
         output = exc.output
-        rc = exc.returncode
+        ret_code = exc.returncode
         if exit_on_error == True:
             msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'. \
-                    format(cmd, exc.cmd, rc, output)
+                    format(cmd, exc.cmd, ret_code, output)
             module.fail_json(msg=msg)
 
     except Exception as exc:
@@ -119,25 +78,25 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
                format(cmd, exc.args)
         module.fail_json(msg=msg)
 
-    if rc == 0:
+    if ret_code == 0:
         if debug_data == True:
             DEBUG_DATA.append('exec output:{}'.format(output))
         logging.debug('exec command output:{}'.format(output))
     else:
         if debug_data == True:
-            DEBUG_DATA.append('exec command rc:{}, stderr:{}'.format(rc, output))
-        logging.debug('exec command rc:{}, stderr:{}'.format(rc, output))
+            DEBUG_DATA.append('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
+        logging.debug('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
 
-    return (rc, output)
+    return (ret_code, output)
 
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def get_hmc_info(module):
     """
-    Get the hmc info on the nim master, and get their login/passwd
+    Get the hmc info on the nim master
 
-    fill the hmc_dic passed in parameter (filled with the login/passwd value)
+    fill the hmc_dic passed in parameter
     
     return a dic with hmc info
     """
@@ -149,7 +108,8 @@ def get_hmc_info(module):
     (ret, std_out) = exec_cmd(cmd, module)
 
     obj_key = ''
-    for line in std_out.rstrip().split('\n'):
+    for line in std_out.split('\n'):
+        line = line.rstrip()
         match_key = re.match(r"^(\S+):", line)
         # HMC name
         if match_key:
@@ -200,7 +160,8 @@ def get_nim_clients_info(module, lpar_type):
 
     # lpar name and associated Cstate
     obj_key = ""
-    for line in std_out.rstrip().split('\n'):
+    for line in std_out.split('\n'):
+        line = line.rstrip()
         match_key = re.match(r"^(\S+):", line)
         if match_key:
             obj_key = match_key.group(1)
@@ -228,33 +189,6 @@ def get_nim_clients_info(module, lpar_type):
                 info_hash[obj_key]['vios_ip'] = match_if.group(1)
 
     return info_hash
-
-
-# ----------------------------------------------------------------
-# ----------------------------------------------------------------
-def get_nim_vios_oslevel():
-    """
-    Get the oslevel of the vios defined on the nim master.
-
-    return a hash of the vios oslevel
-    """
-
-    # =========================================================================
-    # Launch threads to collect information on targeted nim clients
-    # =========================================================================
-    threads = []
-    vios_oslevel = {}
-
-    for machine in NIM_NODE['nim_vios']:
-        process = threading.Thread(target=run_oslevel_cmd,
-                                   args=(machine, vios_oslevel, 'vios'))
-        process.start()
-        threads.append(process)
-
-    for process in threads:
-        process.join()
-
-    return vios_oslevel
 
 
 # ----------------------------------------------------------------
@@ -288,17 +222,6 @@ def build_nim_node(module):
     nim_vios = get_nim_clients_info(module, 'vios')
 
     NIM_NODE['nim_vios'] = nim_vios
-    logging.debug('NIM VIOS: {}'.format(nim_vios))
-
-    # =========================================================================
-    # get the oslevel of each vios
-    # =========================================================================
-    vios_oslevel = {}
-    vios_oslevel = get_nim_vios_oslevel()
-
-    for (k, val) in vios_oslevel.items():
-        NIM_NODE['nim_vios'][k]['oslevel'] = val
-
     logging.debug('NIM VIOS: {}'.format(nim_vios))
 
 
@@ -369,7 +292,7 @@ def check_vios_targets(targets):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def vios_health(module, mgmt_sys_uuid, hmc_login, hmc_passwd, hmc_ip, vios_uuids):
+def vios_health(module, mgmt_sys_uuid, hmc_ip, vios_uuids):
     """
     Check the "health" of the given VIOSES
 
@@ -382,8 +305,7 @@ def vios_health(module, mgmt_sys_uuid, hmc_login, hmc_passwd, hmc_ip, vios_uuids
                   format(hmc_ip, vios_uuids))
 
     # build the vioshc cmde
-    cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-u', hmc_login, \
-           '-p', hmc_passwd, '-m', mgmt_sys_uuid]
+    cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-m', mgmt_sys_uuid]
     for vios in vios_uuids:
         cmd.extend(['-U', vios])
 
@@ -393,8 +315,11 @@ def vios_health(module, mgmt_sys_uuid, hmc_login, hmc_passwd, hmc_ip, vios_uuids
                       format(ret, std_out))
         logging.error('VIOS Health check failed, vioshc returns: {} {}'. \
                       format(ret, std_out))
-        # TBC
-        # module.fail_json(msg=msg)
+        msg = 'vioshc command error rc: {} output {}'.format(ret, std_out)
+        OUTPUT.append('    VIOS can NOT be updated')
+        logging.info('vioses {} can NOT be updated'. \
+                     format(vios_uuids))
+        ret=1
     elif re.search(r'Pass rate of 100%', std_out, re.M):
         OUTPUT.append('    VIOS Health check passed')
         logging.info('vioses {} can be updated'. \
@@ -411,7 +336,7 @@ def vios_health(module, mgmt_sys_uuid, hmc_login, hmc_passwd, hmc_ip, vios_uuids
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def vios_health_init(module, hmc_id, hmc_login, hmc_passwd, hmc_ip):
+def vios_health_init(module, hmc_id, hmc_ip):
     """
     Check the "health" of the given VIOSES for a rolling update point of view
 
@@ -425,14 +350,12 @@ def vios_health_init(module, hmc_id, hmc_login, hmc_passwd, hmc_ip):
     """
     global NIM_NODE
 
-    logging.debug('hmc_id: {}, hmc_ip: {}, login: {}'. \
-                  format(hmc_id, hmc_ip, hmc_login))
+    logging.debug('hmc_id: {}, hmc_ip: {}'.format(hmc_id, hmc_ip))
 
     ret = 0
     # if needed, call the /usr/sbin/vioshc.py script a first time to
     # collect UUIDs
-    cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-u', hmc_login, \
-           '-p', hmc_passwd, '-l', 'a']
+    cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-l', 'a']
 
     (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
@@ -449,7 +372,8 @@ def vios_health_init(module, hmc_id, hmc_login, hmc_passwd, hmc_ip):
     vios_section = 0
     cec_uuid = ''
     cec_serial = ''
-    for line in std_out.rstrip().split('\n'):
+    for line in std_out.split('\n'):
+        line = line.rstrip()
         # TBC - remove?
         logging.debug('--------line {}'.format(line))
         if vios_section == 0:
@@ -511,7 +435,7 @@ def vios_health_init(module, hmc_id, hmc_login, hmc_passwd, hmc_ip):
             continue
 
         OUTPUT.append('    Bad command output for the hmc: {}'.format(hmc_id))
-        logging.error('vioshc command, bad output line:{}'.format(line))
+        logging.error('vioshc command, bad output line: {}'.format(line))
         msg = 'Health init check failed. Bad vioshc.py command output for the {} hmc - output: {}'. \
                 format(hmc_id, line)
         module.fail_json(msg=msg)
@@ -571,16 +495,13 @@ def health_check(module, targets):
 
         vios_uuid = []
 
-        # TBC - hmc_passwd forced
-        hmc_passwd = 'abc123'
-
         # if needed call vios_health_init to get the UUIDs value
         if 'vios_uuid' not in NIM_NODE['nim_vios'][vios1] or \
             tup_len == 2 and 'vios_uuid' not in NIM_NODE['nim_vios'][vios2]:
 
             OUTPUT.append('    Getting VIOS UUID')
 
-            ret = vios_health_init(module, hmc_id, hmc_login, hmc_passwd, hmc_ip)
+            ret = vios_health_init(module, hmc_id, hmc_ip)
             if ret != 0:
                 OUTPUT.append('    Unable to get UUIDs of {} and {}, ret: {}'. \
                              format(vios1, vios2, ret))
@@ -605,13 +526,7 @@ def health_check(module, targets):
             mgmt_uuid = NIM_NODE['nim_vios'][vios1]['cec_uuid']
 
             OUTPUT.append('    Checking if we can update the VIOS')
-            ret = vios_health(module, mgmt_uuid, hmc_login, hmc_passwd, hmc_ip,
-                              vios_uuid)
-
-            # TBC-Begin - For testing, will be remove !
-            if vios1 == 'gdrh9v1' or vios1 == 'gdrh9v2':
-                ret = 0
-            # TBC-End
+            ret = vios_health(module, mgmt_uuid, hmc_ip, vios_uuid)
 
             if ret == 0:
                 OUTPUT.append('    Health check succeeded')

@@ -56,7 +56,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
 
     global DEBUG_DATA
 
-    rc = 0
+    ret_code = 0
     output = ''
 
     logging.debug('exec command:{}'.format(cmd))
@@ -66,12 +66,12 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT) 
 
     except subprocess.CalledProcessError as exc:
-        # exception for rc != 0 can be cached if exit_on_error is set
+        # exception for ret_code != 0 can be cached if exit_on_error is set
         output = exc.output
-        rc = exc.returncode
+        ret_code = exc.returncode
         if exit_on_error == True:
             msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'. \
-                    format(cmd, exc.cmd, rc, output)
+                    format(cmd, exc.cmd, ret_code, output)
             module.fail_json(msg=msg)
 
     except Exception as exc:
@@ -80,16 +80,16 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
                format(cmd, exc.args)
         module.fail_json(msg=msg)
 
-    if rc == 0:
+    if ret_code == 0:
         if debug_data == True:
             DEBUG_DATA.append('exec output:{}'.format(output))
         logging.debug('exec command output:{}'.format(output))
     else:
         if debug_data == True:
-            DEBUG_DATA.append('exec command rc:{}, stderr:{}'.format(rc, output))
-        logging.debug('exec command rc:{}, stderr:{}'.format(rc, output))
+            DEBUG_DATA.append('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
+        logging.debug('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
 
-    return (rc, output)
+    return (ret_code, output)
 
 
 # ----------------------------------------------------------------
@@ -111,7 +111,8 @@ def get_nim_clients_info(module, lpar_type):
 
     # lpar name and associated Cstate
     obj_key = ""
-    for line in std_out.rstrip().split('\n'):
+    for line in std_out.split('\n'):
+        line = line.rstrip()
         match_key = re.match(r"^(\S+):", line)
         if match_key:
             obj_key = match_key.group(1)
@@ -293,18 +294,23 @@ def get_updateios_cmd(module):
         cmd += ['-a', 'accept_licenses=yes']
 
     # updateios flags
-    cmd += ['-a', 'updateios_flags=-%s' %(module.params['updateios_flags'])]
+    cmd += ['-a', 'updateios_flags=-%s' %(module.params['action'])]
 
-    if module.params['updateios_flags'] == "remove":
-        if module.params['filesets'] != "none":
+    if module.params['action'] == "remove":
+        if module.params['filesets']:
             cmd += ['-a', 'filesets=%s' %(module.params['filesets'])]
-        elif module.params['installp_bundle'] != "none":
+        elif module.params['installp_bundle']:
             cmd += ['-a', 'installp_bundle=%s' %(module.params['installp_bundle'])]
+        else:
+            msg = '"filesets" parameter or "installp_bundle" parameter is mandatory with the "remove" action'
+            logging.error('{}'.format(msg))
+            OUTPUT.append('{}'.format(msg))
+            module.fail_json(msg=msg)
     else:
-        # TBC - Is this trace useful?
-        logging.info('Discarding filesets {} and installp_bundle {}'. \
-                format(module.params['filesets'], module.params['installp_bundle']))
-        OUTPUT.append('Any installp_bundle or filesets have been discarded')
+        if module.params['filesets'] or module.params['installp_bundle']:
+            logging.info('Discarding filesets {} and installp_bundle {}'. \
+                         format(module.params['filesets'], module.params['installp_bundle']))
+            OUTPUT.append('Any installp_bundle or filesets have been discarded')
 
     # preview mode
     if module.params['preview']:
@@ -357,10 +363,10 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
 
             elif vios_status[vios_key] != 'SUCCESS-ALTDC':
                 update_op_tab[vios_key] = vios_status[vios_key]
-                OUTPUT.append("    {} vioses skipped (vios_status[vios_key])". \
-                               format(vios_key))
-                logging.warn("{} vioses skipped (vios_status[vios_key])". \
-                              format(vios_key))
+                OUTPUT.append("    {} vioses skipped (vios_status: {})". \
+                               format(vios_key, vios_status[vios_key]))
+                logging.warn("{} vioses skipped (vios_status: {})". \
+                              format(vios_key, vios_status[vios_key]))
                 continue
 
         # check if there is time to handle this tuple
@@ -388,15 +394,15 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
 
             # set the error label to be used in sub routines
             err_label = "FAILURE-UPDT1"
-            if vios == vios2:
+            if vios != vios1:
                 err_label = "FAILURE-UPDT2"
 
             cmd_to_run = cmd + [vios]
             (ret, std_out) = exec_cmd(cmd_to_run, module)
 
             if ret != 0:
-                logging.error('NIM Command: {} failed {} {}'.format(cmd, ret, std_out))
-                OUTPUT.append("    Failed to update VIOS {} with NIM: {}".format(std_out))
+                logging.error('NIM Command: {} failed {} {}'.format(cmd_to_run, ret, std_out))
+                OUTPUT.append("    Failed to update VIOS {} with NIM: {}".format(vios, cmd_to_run))
                 update_op_tab[vios_key] = err_label
                 break
             else:
@@ -425,7 +431,7 @@ if __name__ == '__main__':
             installp_bundle=dict(required=False, type='str'),
             lpp_source=dict(required=False, type='str'),
             accept_licenses=dict(required=False, type='str'),
-            updateios_flags=dict(choices=['install', 'commit', 'reject', \
+            action=dict(choices=['install', 'commit', 'reject', \
                                           'cleanup', 'remove'], \
                                  required=True, type='str'),
             preview=dict(required=False, type='str'),
@@ -435,7 +441,7 @@ if __name__ == '__main__':
             nim_node=dict(required=False, type='dict')
         ),
         required_if=[
-            ['updateios_flags', 'install', ['lpp_source']],
+            ['action', 'install', ['lpp_source']],
         ],
         mutually_exclusive=[
             ['filesets', 'installp_bundle'],
@@ -455,10 +461,9 @@ if __name__ == '__main__':
         vios_status = None
 
     # build a time structure for time_limit attribute,
-    # the date can be omitted if sameday
     time_limit = None
     if module.params['time_limit']:
-        match_key = re.match(r"^\S*\d{2}/\d{2}/\d{4} \S*\d{2}:\d{2}\S*$", module.params['time_limit'])
+        match_key = re.match(r"^\s*\d{2}/\d{2}/\d{4} \S*\d{2}:\d{2}\s*$", module.params['time_limit'])
         if match_key:
             time_limit = time.strptime(module.params['time_limit'], '%m/%d/%Y %H:%M')
         else:
@@ -482,8 +487,8 @@ if __name__ == '__main__':
     logging.debug('*** START NIM UPDATE VIOS OPERATION ***')
 
     OUTPUT.append('Updateios operation for {}'.format(module.params['targets']))
-    logging.info('updateios_flags {} for {} targets'. \
-            format(module.params['updateios_flags'], targets))
+    logging.info('Action {} for {} targets'. \
+            format(module.params['action'], targets))
 
     # =========================================================================
     # build nim node info
