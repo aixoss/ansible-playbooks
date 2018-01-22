@@ -70,7 +70,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
     if debug_data == True:
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT) 
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
 
     except subprocess.CalledProcessError as exc:
         # exception for ret_code != 0 can be cached if exit_on_error is set
@@ -618,7 +618,7 @@ def find_valid_altdisk(module, action, vios_dict, vios_key, altdisk_op_tab):
                       format(vios, vios_dict[vios], PARAMS['disk_size_policy']))
 
         # hdisk specified by the user
-        else: 
+        else:
             # check the specified hdisk is large enough
             hdisk = vios_dict[vios]
             if pvs.has_key(hdisk):
@@ -714,7 +714,12 @@ def check_valid_altdisk(module, action, vios, vios_dict, vios_key, altdisk_op_ta
                     return 1
                 else:
                     vios_dict[vios] = hdisk
-        return 0
+        if vios_dict[vios]:
+            return 0
+        else:
+            OUTPUT.append('    There is no alternate install rootvg on {}'.format(vios))
+            logging.error('There is no alternate install rootvg on {}'.format(vios))
+            return 1
 
 
 # ----------------------------------------------------------------
@@ -967,8 +972,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                 std_out = ''
                 cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', \
                         NIM_NODE['nim_vios'][vios]['vios_ip'], \
-                        '"/etc/chdev -a pv=clear -l {}; /usr/bin/dd if=/dev/zero of=/dev/{}  seek=7 count=1 bs=512"'.\
-                        format(vios_dict[vios], vios_dict[vios])]
+                        '"/usr/bin/dd if=/dev/zero of=/dev/{}  seek=7 count=1 bs=512"'.format(vios_dict[vios])]
                 (ret, std_out) = exec_cmd(cmd, module)
 
                 if ret != 0:

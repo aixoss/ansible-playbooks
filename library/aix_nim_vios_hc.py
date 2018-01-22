@@ -61,7 +61,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
     if debug_data == True:
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT) 
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
 
     except subprocess.CalledProcessError as exc:
         # exception for ret_code != 0 can be cached if exit_on_error is set
@@ -97,7 +97,7 @@ def get_hmc_info(module):
     Get the hmc info on the nim master
 
     fill the hmc_dic passed in parameter
-    
+
     return a dic with hmc info
     """
     std_out = ''
@@ -184,7 +184,7 @@ def get_nim_clients_info(module, lpar_type):
                     info_hash[obj_key]['mgmt_vios_id'] = mgmt_elts[1]
                     info_hash[obj_key]['mgmt_cec_serial'] = mgmt_elts[2]
 
-            match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line) 
+            match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line)
             if match_if:
                 info_hash[obj_key]['vios_ip'] = match_if.group(1)
 
@@ -390,7 +390,7 @@ def vios_health_init(module, hmc_id, hmc_ip):
             if match_key:
                 cec_uuid = match_key.group(1)
                 cec_serial = match_key.group(2).replace("*","_")
-                
+
                 logging.debug('New managed system section:{},{}'.\
                         format(cec_uuid, cec_serial))
                 continue
@@ -450,7 +450,7 @@ def health_check(module, targets):
     """
     Healt assessment of the VIOSes targets to ensure they can be support
     a rolling update operation.
-    
+
     For each VIOS tuple,
     - call /usr/sbin/vioshc.py a first time to collect the VIOS UUIDs
     - call it a second time to check the healthiness
@@ -475,7 +475,7 @@ def health_check(module, targets):
             vios_key = "{}-{}".format(vios1, vios2)
         else:
             vios_key = vios1
-        
+
         logging.debug('vios1: {}'.format(vios1))
         cec_serial = NIM_NODE['nim_vios'][vios1]['mgmt_cec_serial']
         hmc_id = NIM_NODE['nim_vios'][vios1]['mgmt_hmc_id']
@@ -488,9 +488,6 @@ def health_check(module, targets):
             health_tab[vios_key] = 'FAILURE-HC'
             continue
 
-        hmc_login = NIM_NODE['nim_hmc'][hmc_id]['login']
-        hmc_login_len = len(hmc_login)
-        hmc_passfile = NIM_NODE['nim_hmc'][hmc_id]['passwd_file']
         hmc_ip = NIM_NODE['nim_hmc'][hmc_id]['ip']
 
         vios_uuid = []
@@ -517,7 +514,7 @@ def health_check(module, targets):
             logging.warn("Unable to find one vios_uuid in NIM_NODE")
             health_tab[vios_key] = 'FAILURE-HC'
 
-        else:            
+        else:
             # run the vios_health check for the vios tuple
             vios_uuid.append(NIM_NODE['nim_vios'][vios1]['vios_uuid'])
             if tup_len == 2:
@@ -552,7 +549,7 @@ if __name__ == '__main__':
     CHANGED = False
     targets_list = []
     VARS = {}
-    
+
 
     module = AnsibleModule(
         argument_spec=dict(

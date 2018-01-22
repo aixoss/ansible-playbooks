@@ -33,7 +33,7 @@ DOCUMENTATION = """
 ---
 module: update_ios
 authors: Cynthia Wu, Marco Lugo, Patrice Jacquin
-short_description: Perform a VIO update 
+short_description: Perform a VIO update
 """
 
 
@@ -63,7 +63,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
     if debug_data == True:
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT) 
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
 
     except subprocess.CalledProcessError as exc:
         # exception for ret_code != 0 can be cached if exit_on_error is set
@@ -179,7 +179,7 @@ def check_lpp_source(module, lpp_source):
     Check to make sure lpp_source exists
         - module        the module variable
         - lpp_source    lpp_source param provided by module
-    In case lpp_source does not exist fail the module 
+    In case lpp_source does not exist fail the module
     return
         - exists        True
     """
@@ -267,13 +267,180 @@ def check_vios_targets(module, targets):
 
     return vios_list_tuples_res
 
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
+def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
+    """
+    Check the SSP status of the VIOS tuple
+    Update IOS can only be performed when both VIOSes in the tuple
+         refer to the same cluster and have the same SSP status
+    return
+        0 if OK
+        1 else
+    """
+
+    global NIM_NODE
+
+    ssp_name = ''
+    vios_ssp_status = ''
+    vios_name = ''
+    err_label = 'FAILURE-SSP'
+    cluster_found = False
+    tuple_len = len(target_tuple)
+
+    for vios in target_tuple:
+        NIM_NODE['nim_vios'][vios]['ssp_status'] = 'none'
+
+    # get the SSP status
+    for vios in target_tuple:
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', \
+               NIM_NODE['nim_vios'][vios]['vios_ip'], \
+               '"/usr/ios/cli/ioscli cluster -status -fmt :"']
+        (ret, std_out) = exec_cmd(cmd, module)
+
+        if ret != 0:
+            update_op_tab[vios_key] = err_label
+            OUTPUT.append('    Failed to get the SSP status for {}, cluster status returns: {}'. \
+                          format(vios, std_out))
+            logging.error('Failed to get the SSP status for {}, cluster status returns: {} {}'. \
+                          format(vios, ret, std_out))
+            return 1
+
+        # check that the VIOSes belong to the same cluster and have the same satus
+        #                  or there is no SSP
+        # stdout is like:
+        # gdr_ssp3:OK:castor_gdr_vios3:8284-22A0221FD4BV:17:OK:OK
+        # gdr_ssp3:OK:castor_gdr_vios2:8284-22A0221FD4BV:16:OK:OK
+        #  or
+        # Cluster does not exist.
+        #
+        for line in std_out.split('\n'):
+            line = line.rstrip()
+            match_key = re.match(r"^Cluster does not exist.$", line)
+            if match_key:
+                logging.debug('There is no cluster or the node {} is DOWN'. \
+                              format(vios))
+                NIM_NODE['nim_vios'][vios]['vios_ssp_status'] = 'DOWN'
+                if tuple_len == 1:
+                    return 0
+                else:
+                    break
+
+            cluster_found = True
+            match_key = re.match(r"^(\S+):(\S+):(\S+):\S+:\S+:(\S+):.*", line)
+            if match_key:
+                cur_ssp_name = match_key.group(1)
+                cur_ssp_satus = match_key.group(2)
+                cur_vios_name = match_key.group(3)
+                cur_vios_ssp_status = match_key.group(4)
+
+                if cur_vios_name in target_tuple:
+                    NIM_NODE['nim_vios'][cur_vios_name]['vios_ssp_status'] = cur_vios_ssp_status
+                    NIM_NODE['nim_vios'][cur_vios_name]['ssp_name'] = cur_ssp_name
+                    # single VIOS case
+                    if tuple_len == 1:
+                        if cur_vios_ssp_status == 'OK':
+                            err_msg = 'SSP is active for the single VIOS: {}. VIOS cannot be updated'. \
+                                       format(cur_vios_name)
+                            OUTPUT.append('{}'.format(err_msg))
+                            logging.error('{}'.format(err_msg))
+                            update_op_tab[vios_key] = err_label
+                            return 1
+                        else:
+                            return 0
+
+                    # first VIOS in the pair
+                    if ssp_name == "":
+                        ssp_name = cur_ssp_name
+                        vios_name = cur_vios_name
+                        vios_ssp_status = cur_vios_ssp_status
+                        continue
+
+                    # both VIOSes found
+                    if vios_ssp_status != cur_vios_ssp_status:
+                        err_msg = 'SSP status is not the same for the both VIOSes: ({}). VIOSes cannot be updated'. \
+                                   format(vios_key)
+                        OUTPUT.append('{}'.format(err_msg))
+                        logging.error('{}'.format(err_msg))
+                        update_op_tab[vios_key] = err_label
+                        return 1
+                    elif ssp_name != cur_ssp_name and cur_vios_ssp_status == 'OK':
+                        err_msg = 'Both VIOSes: {} does not belong to the same SSP. VIOSes cannot be updated'. \
+                                   format(vios_key)
+                        OUTPUT.append('{}'.format(err_msg))
+                        logging.error('{}'.format(err_msg))
+                        update_op_tab[vios_key] = err_label
+                        return 1
+                    else:
+                        return 0
+
+    if cluster_found == True:
+        err_msg = 'Only one VIOS belongs to an SSP. VIOSes {} cannot be updated'. \
+                                   format(vios_key)
+        OUTPUT.append('{}'.format(err_msg))
+        logging.error('{}'.format(err_msg))
+        update_op_tab[vios_key] = err_label
+        return 1
+
+    else:
+        return 0
+
+
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
+def ssp_stop_start(module, target_tuple, vios, action):
+    """
+    stop/start the SSP for a VIOS
+    return
+        0 if OK
+        1 else
+    """
+
+    global NIM_NODE
+
+    logging.debug("ssp_start_stop {},{},{}".format(target_tuple, vios, action))
+    # if action is start SSP,  find the first node running SSP
+    node = vios
+    if action == "start":
+        logging.debug("search the vios runing ssp")
+        for cur_node in target_tuple:
+            logging.debug("vios:{} ssp status is {}".format(cur_node, NIM_NODE['nim_vios'][cur_node]['vios_ssp_status']))
+
+            if NIM_NODE['nim_vios'][cur_node]['vios_ssp_status'] == "OK":
+                node = cur_node
+                break
+
+    clctrl_cmd = '/usr/sbin/clctrl -{} -n {} -m {}'. \
+                 format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)
+
+    cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', \
+            NIM_NODE['nim_vios'][node]['vios_ip'], \
+            '"%s"' %(clctrl_cmd )]
+    (ret, std_out) = exec_cmd(cmd, module)
+
+    if ret != 0:
+        msg = 'Failed to {} cluster {} on vios {}'. \
+              format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)
+        logging.warn("{}".format(msg))
+        return 1
+
+    if action == "stop":
+        NIM_NODE['nim_vios'][vios]['vios_ssp_status'] = 'DOWN'
+    else:
+        NIM_NODE['nim_vios'][vios]['vios_ssp_status'] = 'OK'
+
+    logging.info('{} cluster {} on vios {} succeed'. \
+                 format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios))
+
+    return 0
+
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def get_updateios_cmd(module):
     """
     Assemble the updateios command
-        - module        the module variable 
+        - module        the module variable
     return
         - cmd           array of the command parameters
     """
@@ -328,10 +495,11 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
     Execute the updateios command
         - module        the module variable
     return
-        - ret           return code of nim updateios command 
+        - ret           return code of nim updateios command
     """
     global CHANGED
     global OUTPUT
+    global NIM_NODE
 
     # build de cmd from the playbook parameters
     cmd = get_updateios_cmd(module)
@@ -347,7 +515,7 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
             vios_key = "{}-{}".format(vios1, vios2)
         else:
             vios_key = vios1
-        
+
         logging.debug('vios_key: {}'.format(vios_key))
 
         # if health check status is known, check the vios tuple has passed
@@ -378,6 +546,16 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
                     format(time_limit_str))
             return 0
 
+        # check if SSP is defined for this VIOSes tuple.
+        ret = get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab)
+        if ret == 1:
+            logging.warn('Update operation for {} vioses skipped due to bad SSP status'. \
+                           format(vios_key))
+            OUTPUT.append('Update operation for {} vioses skipped due to bad SSP status'. \
+                           format(vios_key))
+            logging.info('Update operation can only be done when both of the VIOSes have the same SSP status (or for a single VIOS, when the SSP status is inactive) and belong to the same SSP')
+            continue
+
         # TBC - Begin: Uncomment for testing without effective update operation
         #OUTPUT.append('Warning: testing without effective update operation')
         #OUTPUT.append('NIM Command: {} '.format(cmd))
@@ -397,19 +575,52 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
             if vios != vios1:
                 err_label = "FAILURE-UPDT2"
 
+            # if needed stop the SSP for the VIOS
+            restart_needed = False
+            if NIM_NODE['nim_vios'][vios]['vios_ssp_status'] == 'OK':
+                ret = ssp_stop_start(module, target_tuple, vios, 'stop')
+                if ret == 1:
+                    logging.error('SSP stop operation failure for VIOS {}'. \
+                                  format(vios))
+                    update_op_tab[vios_key] = err_label
+                    logging.info('VIOS update status for {}: {}'. \
+                                 format(vios_key, update_op_tab[vios_key]))
+                    break # cannot continue
+                else:
+                    restart_needed = True
+                    logging.info(' {}: {}'.format(vios_key, update_op_tab[vios_key]))
+
+            break_required = False
+
             cmd_to_run = cmd + [vios]
             (ret, std_out) = exec_cmd(cmd_to_run, module)
 
             if ret != 0:
                 logging.error('NIM Command: {} failed {} {}'.format(cmd_to_run, ret, std_out))
-                OUTPUT.append("    Failed to update VIOS {} with NIM: {}".format(vios, cmd_to_run))
+                OUTPUT.append('    Failed to update VIOS {} with NIM: {}'.format(vios, cmd_to_run))
                 update_op_tab[vios_key] = err_label
-                break
+                # in case of failure try to restart the SSP if needed
+                break_required = True
             else:
                 logging.info('VIOS {} successfully updated'.format(vios))
                 OUTPUT.append("    VIOS {} successfully updated".format(vios))
+                CHANGED = True
 
-            CHANGED = True
+            # if needed restart the SSP for the VIOS
+            if restart_needed:
+                ret = ssp_stop_start(module, target_tuple, vios, 'start')
+                if ret == 1:
+                    logging.error('SSP start operation failure for VIOS {}'. \
+                                  format(vios))
+                    update_op_tab[vios_key] = err_label
+                    logging.info('VIOS update status for {}: {}'. \
+                                 format(vios_key, update_op_tab[vios_key]))
+                    break # cannot continue
+
+                logging.info(' {}: {}'.format(vios_key, update_op_tab[vios_key]))
+
+            if break_required:
+                break
 
     return 0
 
