@@ -115,7 +115,7 @@ def download(src, dst):
             logging.warn('EXCEPTION cmd={} rc={} output={}'
                          .format(exc.cmd, exc.returncode, exc.output))
             res = False
-            if exc.returncode is 3:
+            if exc.returncode == 3:
                 increase_fs(dst)
                 os.remove(dst)
                 download(src, dst)
@@ -129,7 +129,7 @@ def unzip(src, dst):
     try:
         zfile = zipfile.ZipFile(src)
         zfile.extractall(dst)
-    except Exception as exc:
+    except (zipfile.BadZipfile, zipfile.LargeZipFile, RuntimeError) as exc:
         logging.warn('EXCEPTION {}'.format(exc))
         increase_fs(dst)
         unzip(src, dst)
@@ -151,7 +151,8 @@ def locked_fileset(machine, fileset):
 @logged
 def remove_efix(machine, label):
     try:
-        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/sbin/emgr -r -L {}'.format(label)]
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
+               '/usr/sbin/emgr -r -L {}'.format(label)]
         logging.debug(' '.join(cmd))
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
         logging.debug('{}: command result is {}'.format(machine, stdout))
@@ -219,7 +220,7 @@ def check_prereq(epkg, ref, machine, force):
                                 res = False
                             break
 
-                    if found == False:
+                    if found is False:
                         res = False
 
     return res
@@ -338,7 +339,8 @@ def run_parser(machine, output, report):
         report  (str): The compact report
     """
     dict_rows = csv.DictReader(report, delimiter='|')
-    pattern = re.compile(r'^(http|https|ftp)://(aix.software.ibm.com|public.dhe.ibm.com)/(aix/ifixes/.*?/|aix/efixes/security/.*?.tar)$')
+    pattern = re.compile(r'^(http|https|ftp)://(aix.software.ibm.com|public.dhe.ibm.com)'
+                         r'/(aix/ifixes/.*?/|aix/efixes/security/.*?.tar)$')
     rows = [row['Download URL'] for row in dict_rows]
     rows = [row for row in rows if pattern.match(row) is not None]
     rows = list(set(rows))  # remove duplicates
@@ -404,7 +406,7 @@ def run_downloader(machine, output, urls, force):
             for epkg in epkgs:
                 try:
                     tar.extract(epkg, tar_dir)
-                except Exception as exc:
+                except (OSError, IOError, tarfile.TarError) as exc:
                     logging.warn('EXCEPTION {}'.format(exc))
                     increase_fs(tar_dir)
                     tar.extract(epkg, tar_dir)
@@ -429,7 +431,8 @@ def run_downloader(machine, output, urls, force):
 
             # download epkg
             epkgs = [os.path.abspath(os.path.join(WORKDIR, epkg)) for epkg in epkgs
-                     if download(os.path.join(url, epkg), os.path.abspath(os.path.join(WORKDIR, epkg)))]
+                     if download(os.path.join(url, epkg),
+                                 os.path.abspath(os.path.join(WORKDIR, epkg)))]
             out['3.download'].extend(epkgs)
 
             # check prerequisite
@@ -462,12 +465,12 @@ def run_installer(machine, output, epkgs, force):
         for epkg in epkgs:
             try:
                 shutil.copy(epkg, destpath)
-            except Exception as exc:
+            except (IOError, shutil.Error) as exc:
                 logging.warn('EXCEPTION {}'.format(exc))
                 increase_fs(destpath)
                 shutil.copy(epkg, destpath)
         epkgs_base = [os.path.basename(epkg) for epkg in epkgs]
-        epkgs_base.sort(reverse = True)
+        epkgs_base.sort(reverse=True)
 
         efixes = ' '.join(epkgs_base)
         lpp_source = machine + '_lpp_source'
@@ -686,7 +689,7 @@ if __name__ == '__main__':
     CHECK_ONLY = MODULE.params['check_only']
     DOWNLOAD_ONLY = MODULE.params['download_only']
 
-    if (FLRTVC_PARAMS['dst_path'] is None) or (not FLRTVC_PARAMS['dst_path'].strip()) :
+    if (FLRTVC_PARAMS['dst_path'] is None) or (not FLRTVC_PARAMS['dst_path'].strip()):
         FLRTVC_PARAMS['dst_path'] = '/tmp/ansible'
     WORKDIR = os.path.join(FLRTVC_PARAMS['dst_path'], 'work')
 

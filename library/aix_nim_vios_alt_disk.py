@@ -67,7 +67,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
     output = ''
 
     logging.debug('exec command:{}'.format(cmd))
-    if debug_data == True:
+    if debug_data is True:
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
@@ -76,7 +76,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
         # exception for ret_code != 0 can be cached if exit_on_error is set
         output = exc.output
         ret_code = exc.returncode
-        if exit_on_error == True:
+        if exit_on_error is True:
             msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'. \
                     format(cmd, exc.cmd, ret_code, output)
             module.fail_json(msg=msg)
@@ -88,11 +88,11 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
         module.fail_json(msg=msg)
 
     if ret_code == 0:
-        if debug_data == True:
+        if debug_data is True:
             DEBUG_DATA.append('exec output:{}'.format(output))
         logging.debug('exec command output:{}'.format(output))
     else:
-        if debug_data == True:
+        if debug_data is True:
             DEBUG_DATA.append('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
         logging.debug('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
 
