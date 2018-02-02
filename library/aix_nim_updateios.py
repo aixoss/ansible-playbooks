@@ -519,7 +519,7 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
 
         # if health check status is known, check the vios tuple has passed
         # the health check successfuly
-        if not vios_status is None:
+        if vios_status is not None:
             if vios_key not in vios_status:
                 update_op_tab[vios_key] = "FAILURE-NO-PREV-STATUS"
                 OUTPUT.append("    {} vioses skipped (no previous status found)"
