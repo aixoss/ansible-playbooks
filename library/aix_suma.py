@@ -916,12 +916,13 @@ def suma_down_prev(module):
 
     # Check we have at least one oslevel when a target is specified
     if len(targets_list) != 0 and len(clients_oslevel) == 0:
-        msg = "SUMA Error: Cannot retrieve oslevel for any NIM client of the target list")
+        msg = "SUMA Error: Cannot retrieve oslevel for any NIM client of the target list"
         logging.error(msg)
         module.fail_json(msg=msg)
 
-    logging.debug("oslevel cleaned dict: {}".format(clients_oslevel))
-    logging.warn("SUMA - unavailable client list: {}".format(removed_oslevel))
+    if len(removed_oslevel) != 0:
+        logging.debug("oslevel cleaned dict: {}".format(clients_oslevel))
+        logging.warn("SUMA - unavailable client list: {}".format(removed_oslevel))
 
     # =========================================================================
     # compute SUMA request type based on oslevel property
