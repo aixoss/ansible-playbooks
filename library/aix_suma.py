@@ -342,6 +342,10 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
     rq_name = ''
     if rq_type == 'Latest':
         if not clients_target_oslevel:
+            if clients_target_oslevel == 'Latest':
+                logging.error( \
+                    'Error: target oslevel cannot be "Latest" check you can get the oslevel on targets')
+                return 2
             metadata_filter_ml = oslevel[:7]
             if len(metadata_filter_ml) == 4:
                 metadata_filter_ml += "-00"
@@ -907,6 +911,12 @@ def suma_down_prev(module):
     for key in [k for (k, v) in clients_oslevel.items() if not v]:
         removed_oslevel.append(key)
         del clients_oslevel[key]
+
+    # Check we have at least one oslevel when a target is specified
+    if len(targets_list) != 0 and len(clients_oslevel) == 0:
+        msg = "SUMA Error: Cannot retrieve oslevel for any NIM client of the target list")
+        logging.error(msg)
+        module.fail_json(msg=msg)
 
     logging.debug("oslevel cleaned dict: {}".format(clients_oslevel))
     logging.warn("SUMA - unavailable client list: {}".format(removed_oslevel))
