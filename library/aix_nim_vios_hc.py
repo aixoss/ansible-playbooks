@@ -15,6 +15,7 @@
 # limitations under the License.
 
 ######################################################################
+"""AIX VIOS Health Check: check the pair of VIOS can be updated"""
 
 import os
 import re
@@ -24,6 +25,7 @@ import subprocess
 import threading
 import logging
 # Ansible module 'boilerplate'
+# pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
 from ansible.module_utils.basic import *
 
 

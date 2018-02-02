@@ -15,6 +15,7 @@
 # limitations under the License.
 
 ############################################################################
+"""AIX VIOS NIM Update: tools to update a list of one or a pair of VIOSes"""
 
 import re
 import subprocess
@@ -22,6 +23,7 @@ import logging
 import time
 
 # Ansible module 'boilerplate'
+# pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
 from ansible.module_utils.basic import *
 
 
@@ -70,7 +72,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
                     format(cmd, exc.cmd, ret_code, output)
             module.fail_json(msg=msg)
 
-    except Exception as exc:
+    except OSError as exc:
         # uncatched exception
         msg = 'Command: {} Exception.Args{}'. \
                format(cmd, exc.args)
@@ -202,7 +204,7 @@ def check_lpp_source(module, lpp_source):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def check_vios_targets(module, targets):
+def check_vios_targets(targets):
     """
     check the list of the vios targets.
 
@@ -344,8 +346,7 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
                             logging.error('{}'.format(err_msg))
                             update_op_tab[vios_key] = err_label
                             return 1
-                        else:
-                            return 0
+                        return 0
 
                     # first VIOS in the pair
                     if ssp_name == "":
@@ -370,8 +371,7 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
                         logging.error('{}'.format(err_msg))
                         update_op_tab[vios_key] = err_label
                         return 1
-                    else:
-                        return 0
+                    return 0
 
     if cluster_found is True:
         err_msg = 'Only one VIOS belongs to an SSP. VIOSes {} cannot be updated'.format(vios_key)
@@ -379,9 +379,7 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
         logging.error('{}'.format(err_msg))
         update_op_tab[vios_key] = err_label
         return 1
-
-    else:
-        return 0
+    return 0
 
 
 # ----------------------------------------------------------------
@@ -418,9 +416,10 @@ def ssp_stop_start(module, target_tuple, vios, action):
     (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
+        logging.error('Command: {} failed {} {}'.format(cmd, ret, std_out))
         msg = 'Failed to {} cluster {} on vios {}'\
               .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)
-        logging.warn("{}".format(msg))
+        logging.error("{}".format(msg))
         return 1
 
     if action == "stop":
@@ -450,7 +449,7 @@ def get_updateios_cmd(module):
 
     # lpp source
     if module.params['lpp_source']:
-        if (check_lpp_source(module, module.params['lpp_source'])):
+        if check_lpp_source(module, module.params['lpp_source']):
             cmd += ['-a', 'lpp_source=%s' % (module.params['lpp_source'])]
 
     # accept licenses
@@ -520,7 +519,7 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
 
         # if health check status is known, check the vios tuple has passed
         # the health check successfuly
-        if not (vios_status is None):
+        if not vios_status is None:
             if vios_key not in vios_status:
                 update_op_tab[vios_key] = "FAILURE-NO-PREV-STATUS"
                 OUTPUT.append("    {} vioses skipped (no previous status found)"
@@ -636,7 +635,7 @@ if __name__ == '__main__':
     CHANGED = False
     VARS = {}
 
-    module = AnsibleModule(
+    MODULE = AnsibleModule(
         argument_spec=dict(
             description=dict(required=False, type='str'),
             targets=dict(required=True, type='str'),
@@ -665,29 +664,29 @@ if __name__ == '__main__':
     # =========================================================================
     targets_update_status = {}
     vios_status = {}
-    targets = module.params['targets']
+    targets = MODULE.params['targets']
 
-    if module.params['vios_status']:
-        vios_status = module.params['vios_status']
+    if MODULE.params['vios_status']:
+        vios_status = MODULE.params['vios_status']
     else:
         vios_status = None
 
     # build a time structure for time_limit attribute,
     time_limit = None
-    if module.params['time_limit']:
+    if MODULE.params['time_limit']:
         match_key = re.match(r"^\s*\d{2}/\d{2}/\d{4} \S*\d{2}:\d{2}\s*$",
-                             module.params['time_limit'])
+                             MODULE.params['time_limit'])
         if match_key:
-            time_limit = time.strptime(module.params['time_limit'], '%m/%d/%Y %H:%M')
+            time_limit = time.strptime(MODULE.params['time_limit'], '%m/%d/%Y %H:%M')
         else:
             msg = 'Malformed time limit "{}", please use mm/dd/yyyy hh:mm format.'. \
-                    format(module.params['time_limit'])
-            module.fail_json(msg=msg)
+                    format(MODULE.params['time_limit'])
+            MODULE.fail_json(msg=msg)
 
     # Handle playbook variables
     LOGNAME = '/tmp/ansible_updateios_debug.log'
-    if module.params['vars']:
-        VARS = module.params['vars']
+    if MODULE.params['vars']:
+        VARS = MODULE.params['vars']
     if VARS is not None and 'log_file' not in VARS:
         VARS['log_file'] = LOGNAME
 
@@ -698,21 +697,21 @@ if __name__ == '__main__':
 
     logging.debug('*** START NIM UPDATE VIOS OPERATION ***')
 
-    OUTPUT.append('Updateios operation for {}'.format(module.params['targets']))
-    logging.info('Action {} for {} targets'.format(module.params['action'], targets))
+    OUTPUT.append('Updateios operation for {}'.format(MODULE.params['targets']))
+    logging.info('Action {} for {} targets'.format(MODULE.params['action'], targets))
 
     # =========================================================================
     # build nim node info
     # =========================================================================
-    if module.params['nim_node']:
-        NIM_NODE = module.params['nim_node']
+    if MODULE.params['nim_node']:
+        NIM_NODE = MODULE.params['nim_node']
     else:
-        build_nim_node(module)
+        build_nim_node(MODULE)
 
     # =========================================================================
     # Perfom checks
     # =========================================================================
-    ret = check_vios_targets(module, targets)
+    ret = check_vios_targets(targets)
     if (ret is None) or (not ret):
         OUTPUT.append('Empty target list')
         logging.warn('Warning: Empty target list: "{}"'.format(targets))
@@ -724,15 +723,15 @@ if __name__ == '__main__':
         # =========================================================================
         # Perfom the update
         # =========================================================================
-        ret = nim_updateios(module, targets_list, vios_status,
+        ret = nim_updateios(MODULE, targets_list, vios_status,
                             targets_update_status, time_limit)
 
-        if len(targets_update_status) != 0:
+        if targets_update_status:
             OUTPUT.append('NIM updateios operation status:')
             logging.info('NIM updateios operation status:')
-            for vios_key in targets_update_status.keys():
-                OUTPUT.append("    {} : {}".format(vios_key, targets_update_status[vios_key]))
-                logging.info('    {} : {}'.format(vios_key, targets_update_status[vios_key]))
+            for vios_key, status in targets_update_status:
+                OUTPUT.append("    {} : {}".format(vios_key, status))
+                logging.info('    {} : {}'.format(vios_key, status))
             logging.info('NIM updateios operation result: {}'.format(targets_update_status))
         else:
             logging.error('NIM updateios operation: status table is empty')
@@ -742,10 +741,10 @@ if __name__ == '__main__':
     # =========================================================================
     # Exit
     # =========================================================================
-    module.exit_json(
+    MODULE.exit_json(
         changed=CHANGED,
         msg="NIM updateios operation completed successfully",
-        targets=module.params['targets'],
+        targets=MODULE.params['targets'],
         debug_output=DEBUG_DATA,
         output=OUTPUT,
         status=targets_update_status)

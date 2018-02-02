@@ -15,6 +15,7 @@
 # limitations under the License.
 
 ######################################################################
+"""AIX FLRTVC: generate flrtvc report, download and install efix"""
 
 import logging
 import os
@@ -29,6 +30,7 @@ import tarfile
 import zipfile
 import stat
 # Ansible module 'boilerplate'
+# pylint: disable=wildcard-import,unused-wildcard-import
 from ansible.module_utils.basic import *
 
 DOCUMENTATION = """
@@ -126,6 +128,11 @@ def download(src, dst):
 
 @logged
 def unzip(src, dst):
+    """
+    Unzip source into the destination directory
+        - src (str): The url to unzip
+        - dst (str): The absolute destination path
+    """
     try:
         zfile = zipfile.ZipFile(src)
         zfile.extractall(dst)
@@ -137,6 +144,11 @@ def unzip(src, dst):
 
 @logged
 def locked_fileset(machine, fileset):
+    """
+    Check if a fileset is locked
+        - machine (str): The target machine
+        - fileset (str): Fileset to check
+    """
     try:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, ' {}'.format(fileset)]
         logging.debug(' '.join(cmd))
@@ -150,6 +162,11 @@ def locked_fileset(machine, fileset):
 
 @logged
 def remove_efix(machine, label):
+    """
+    Remove Efix with the given label on the machine
+        - machine (str): The target machine
+        - label   (str): Efix name to remove
+    """
     try:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
                '/usr/sbin/emgr -r -L {}'.format(label)]
@@ -208,10 +225,10 @@ def check_prereq(epkg, ref, machine, force):
                 # ... extract current fileset level ...
                 with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as myfile:
                     found = False
-                    for line in myfile:
-                        if fileset in line:
+                    for myline in myfile:
+                        if fileset in myline:
                             found = True
-                            curlvl = line.split(':')[2]
+                            curlvl = myline.split(':')[2]
                             curlvl_i = list(map(int, curlvl.split(".")))
 
                             # ... and compare to min/max levels.
@@ -421,6 +438,7 @@ def run_downloader(machine, output, urls, force):
             # URL as a Directory
             ################################
             logging.debug('{}: treat url as a directory'.format(machine))
+            # pylint: disable=protected-access
             response = urllib.urlopen(url, context=ssl._create_unverified_context())
 
             # find all epkg in html body
@@ -705,15 +723,15 @@ if __name__ == '__main__':
     # Install flrtvc script
     # ===========================================
     logging.debug('*** INSTALL ***')
-    flrtvcpath = os.path.abspath(os.path.join(os.sep, 'usr', 'bin'))
-    flrtvcfile = os.path.join(flrtvcpath, 'flrtvc.ksh')
-    if not os.path.exists(flrtvcfile):
-        destname = os.path.abspath(os.path.join(os.sep, 'FLRTVC-latest.zip'))
-        download('https://www-304.ibm.com/webapp/set2/sas/f/flrt3/FLRTVC-latest.zip', destname)
-        unzip(destname, os.path.abspath(os.path.join(os.sep, 'usr', 'bin')))
-    st = os.stat(flrtvcfile)
-    if not st.st_mode & stat.S_IEXEC:
-        os.chmod(flrtvcfile, st.st_mode | stat.S_IEXEC)
+    _FLRTVCPATH = os.path.abspath(os.path.join(os.sep, 'usr', 'bin'))
+    _FLRTVCFILE = os.path.join(_FLRTVCPATH, 'flrtvc.ksh')
+    if not os.path.exists(_FLRTVCFILE):
+        _DESTNAME = os.path.abspath(os.path.join(os.sep, 'FLRTVC-latest.zip'))
+        download('https://www-304.ibm.com/webapp/set2/sas/f/flrt3/FLRTVC-latest.zip', _DESTNAME)
+        unzip(_DESTNAME, os.path.abspath(os.path.join(os.sep, 'usr', 'bin')))
+    _STAT = os.stat(_FLRTVCFILE)
+    if not _STAT.st_mode & stat.S_IEXEC:
+        os.chmod(_FLRTVCFILE, _STAT.st_mode | stat.S_IEXEC)
 
     # ===========================================
     # Run flrtvc script
@@ -753,4 +771,7 @@ if __name__ == '__main__':
         run_installer(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['4.check'], FORCE)
     wait_all()
 
-    MODULE.exit_json(changed=CHANGED, msg='exit successfully', meta=OUTPUT)
+    MODULE.exit_json(
+        changed=CHANGED,
+        msg='FLRTVC completed successfully',
+        meta=OUTPUT)

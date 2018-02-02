@@ -15,6 +15,7 @@
 # limitations under the License.
 
 ######################################################################
+"""AIX VIOS NIM ALTDISK: Create/Cleanup an alternate rootvg disk"""
 
 import os
 import re
@@ -27,6 +28,7 @@ import logging
 import string
 
 # Ansible module 'boilerplate'
+# pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
 from ansible.module_utils.basic import *
 
 

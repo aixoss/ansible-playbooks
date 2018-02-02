@@ -15,15 +15,14 @@
 # limitations under the License.
 
 ######################################################################
+"""AIX NIM: server setup, install packages, update SP or TL"""
 
-import os
 import re
-import glob
-import shutil
 import subprocess
 import threading
 import logging
 # Ansible module 'boilerplate'
+# pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
 from ansible.module_utils.basic import *
 
 
@@ -496,8 +495,8 @@ def perform_async_customization(module, lpp_source, targets):
           'NIM - perform_async_customization - lpp_spource: {}, targets: {} '.\
           format(lpp_source, targets))
 
-    cmde = '/usr/sbin/nim -o cust -a lpp_source={} -a fixes=update_all -a accept_licenses=yes -a async=yes {}'. \
-          format(lpp_source, targets)
+    cmde = '/usr/sbin/nim -o cust -a lpp_source={} -a fixes=update_all '\
+           '-a accept_licenses=yes -a async=yes {}'.format(lpp_source, targets)
 
     logging.debug('NIM - Command:{}'.format(cmde))
     NIM_OUTPUT.append('NIM - Command:{}'.format(cmde))
@@ -515,7 +514,8 @@ def perform_async_customization(module, lpp_source, targets):
 
     for line in stdout.rstrip().split('\n'):
         line = line.rstrip()
-        matched = re.match(r"Either the software is already at the same level as on the media, or", line)
+        matched = re.match(r"Either the software is already at the same level as on the media, or",
+                           line)
         if matched:
             do_not_error = True
 
@@ -550,8 +550,8 @@ def perform_sync_customization(module, lpp_source, targets):
         'NIM - perform_sync_customization - lpp_spource: {}, targets: {} '.\
                                                   format(lpp_source, targets))
 
-    cmde = '/usr/sbin/nim -o cust -a lpp_source={} -a fixes=update_all -a accept_licenses=yes -a async=no {}'. \
-                                                  format(lpp_source, targets)
+    cmde = '/usr/sbin/nim -o cust -a lpp_source={} -a fixes=update_all '\
+           '-a accept_licenses=yes -a async=no {}'.format(lpp_source, targets)
 
     logging.debug('NIM - Command:{}'.format(cmde))
     NIM_OUTPUT.append('NIM - Command:{}'.format(cmde))
@@ -580,7 +580,8 @@ def perform_sync_customization(module, lpp_source, targets):
 
     for line in stderr.rstrip().split('\n'):
         line = line.rstrip()
-        matched = re.match(r"^Either the software is already at the same level as on the media, or", line)
+        matched = re.match(r"^Either the software is already at the same level as on the media, or",
+                           line)
         if matched:
             do_not_error = True
 
@@ -718,8 +719,8 @@ def find_resource_by_client(lpp_type, lpp_time, oslevel_elts):
         lpp_source = '{}-{}-{}-{}-lpp_source'. \
                      format(oslevel_elts[0], oslevel_elts[1], \
                             oslevel_elts[2], oslevel_elts[3])
-        logging.debug('NIM - find resource: server already to the {} {}, or no lpp_source were found, {} will be utilized'. \
-                       format(lpp_time, lpp_type, lpp_source))
+        logging.debug('NIM - find resource: server already to the {} {}, or no lpp_source were '\
+                      'found, {} will be utilized'.format(lpp_time, lpp_type, lpp_source))
     else:
         logging.debug('NIM - find resource: found the {} lpp_source, {} will be utilized'. \
                        format(lpp_time, lpp_source))
@@ -767,6 +768,8 @@ def nim_update(module):
     if NIM_PARAMS['force'] == 'true':
         for target in target_list:
             (ret, fixes) = list_fixes(target, module)
+            if ret != 0:
+                logging.info("Continue to remove as many interim fixes we can".format(cmde, ret))
             for fix in fixes:
                 remove_fix(target, fix, module)
                 logging.warning( \
@@ -780,8 +783,8 @@ def nim_update(module):
             module.fail_json(msg="NIM - Error: cannot find lpp_source {}". \
                                               format(NIM_NODE['lpp_sources']))
         else:
-            logging.info('NIM - perform asynchronous software customization for client(s) {} with resource {}'. \
-                      format(' '.join(target_list), lpp_source))
+            logging.info('NIM - perform asynchronous software customization for client(s) {} '\
+                         'with resource {}'.format(' '.join(target_list), lpp_source))
             perform_async_customization(module, lpp_source, ' '.join(target_list))
 
     else:    # synchronous update
@@ -843,8 +846,8 @@ def nim_update(module):
                 logging.info('Machine {} needs upgrade from {} to {}'. \
                                 format(target, cur_oslevel, '-'.join(oslevel_elts)))
 
-            logging.info('NIM - perform synchronous software customization for client(s) {} with resource {}'. \
-                      format(target, new_lpp_source))
+            logging.info('NIM - perform synchronous software customization for client(s) {} '\
+                         'with resource {}'.format(target, new_lpp_source))
             perform_sync_customization(module, new_lpp_source, target)
 
     NIM_CHANGED = True
@@ -1336,7 +1339,7 @@ if __name__ == '__main__':
     NIM_NODE = {}
     NIM_CHANGED = False
 
-    module = AnsibleModule(
+    MODULE = AnsibleModule(
         argument_spec=dict(
             description=dict(required=False, type='str'),
             lpp_source=dict(required=False, type='str'),
@@ -1378,19 +1381,19 @@ if __name__ == '__main__':
     # =========================================================================
     # Get Module params
     # =========================================================================
-    lpp_source = module.params['lpp_source']
-    targets = module.params['targets']
-    async_par = module.params['async']
-    device = module.params['device']
-    script = module.params['script']
-    resource = module.params['resource']
-    location = module.params['location']
-    group = module.params['group']
-    force = module.params['force']
-    action = module.params['action']
+    lpp_source = MODULE.params['lpp_source']
+    targets = MODULE.params['targets']
+    async_par = MODULE.params['async']
+    device = MODULE.params['device']
+    script = MODULE.params['script']
+    resource = MODULE.params['resource']
+    location = MODULE.params['location']
+    group = MODULE.params['group']
+    force = MODULE.params['force']
+    action = MODULE.params['action']
 
-    if module.params['description']:
-        description = module.params['description']
+    if MODULE.params['description']:
+        description = MODULE.params['description']
     else:
         description = "NIM operation: {} request".format(action)
 
@@ -1400,7 +1403,7 @@ if __name__ == '__main__':
     # =========================================================================
     # build nim node info
     # =========================================================================
-    build_nim_node(module)
+    build_nim_node(MODULE)
 
     logging.info('NIM - action {}'.format(action))
 
@@ -1409,67 +1412,67 @@ if __name__ == '__main__':
         NIM_PARAMS['lpp_source'] = lpp_source
         NIM_PARAMS['async'] = async_par
         NIM_PARAMS['force'] = force
-        nim_update(module)
+        nim_update(MODULE)
 
     elif action == 'master_setup':
         NIM_PARAMS['device'] = device
-        nim_master_setup(module)
+        nim_master_setup(MODULE)
 
     elif action == 'check':
         nim_check()
 
     elif action == 'compare':
         NIM_PARAMS['targets'] = targets
-        nim_compare(module)
+        nim_compare(MODULE)
 
     elif action == 'script':
         NIM_PARAMS['targets'] = targets
         NIM_PARAMS['script'] = script
         NIM_PARAMS['async'] = async_par
-        nim_script(module)
+        nim_script(MODULE)
 
     elif action == 'allocate':
         NIM_PARAMS['targets'] = targets
         NIM_PARAMS['lpp_source'] = lpp_source
-        nim_allocate(module)
+        nim_allocate(MODULE)
 
     elif action == 'deallocate':
         NIM_PARAMS['targets'] = targets
         NIM_PARAMS['lpp_source'] = lpp_source
-        nim_deallocate(module)
+        nim_deallocate(MODULE)
 
     elif action == 'bos_inst':
         NIM_PARAMS['targets'] = targets
         NIM_PARAMS['group'] = group
         NIM_PARAMS['script'] = script
-        nim_bos_inst(module)
+        nim_bos_inst(MODULE)
 
     elif action == 'define_script':
         NIM_PARAMS['resource'] = resource
         NIM_PARAMS['location'] = location
-        nim_define_script(module)
+        nim_define_script(MODULE)
 
     elif action == 'remove':
         NIM_PARAMS['resource'] = resource
-        nim_remove(module)
+        nim_remove(MODULE)
 
     elif action == 'reset':
         NIM_PARAMS['targets'] = targets
         NIM_PARAMS['force'] = force
-        ret = nim_reset(module)
+        ret = nim_reset(MODULE)
 
     elif action == 'reboot':
         NIM_PARAMS['targets'] = targets
-        ret = nim_reboot(module)
+        ret = nim_reboot(MODULE)
 
     else:
         logging.error('NIM - Error: Unknowned action {}'.format(action))
-        module.fail_json(msg='NIM - Error: Unknowned action {}'.format(action))
+        MODULE.fail_json(msg='NIM - Error: Unknowned action {}'.format(action))
 
     # ==========================================================================
     # Exit
     # ==========================================================================
-    module.exit_json(
+    MODULE.exit_json(
         changed=NIM_CHANGED,
         msg="NIM {} completed successfully".format(action),
         debug_output=DEBUG_DATA,

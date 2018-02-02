@@ -16,6 +16,7 @@
 #
 
 ######################################################################
+"""AIX SUMA: download fixes, SP or TL on a NIM server"""
 
 import os
 import re
@@ -25,6 +26,7 @@ import subprocess
 import threading
 import logging
 # Ansible module 'boilerplate'
+# pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
 from ansible.module_utils.basic import *
 
 
