@@ -239,8 +239,10 @@ def get_nim_clients(module):
         (std_out, std_err) = proc.communicate()
     except Exception as excep:
         msg = "Command: {} Exception.Args{} =>Data:{} ... Error :{}". \
-                format(cmd, excep.args, std_out, std_err)
-        module.fail_json(msg=msg)
+                    format(cmd, excep.args, std_out, std_err)
+        SUMA_ERROR.append(msg)
+        logging.error(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     # nim_clients list
     for line in std_out.rstrip().split('\n'):
@@ -609,8 +611,8 @@ def suma_command(module, action):
     if ret != 0:
         logging.error("Error: suma {} command failed with return code {}". \
                       format(action, ret))
-        module.fail_json(msg="SUMA Command: {} => Error :{}". \
-                         format(suma_params, stderr.split('\n')))
+        SUMA_ERROR.append("SUMA Command: {} => Error :{}".format(suma_params, stderr.split('\n')))
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     return ret, stdout
 
@@ -641,12 +643,15 @@ def nim_command(module):
     ret, stdout, stderr = module.run_command(nim_params)
 
     if ret != 0:
-        logging.error("NIM Command: {}".format(nim_params))
-        logging.error("NIM operation failed - rc:{}".format(ret))
+        msg = "NIM Command: {}".format(nim_params)
+        logging.error(msg)
+        SUMA_ERROR.append(msg)
+        msg = "NIM operation failed - rc:{}".format(ret)
+        logging.error(msg)
+        SUMA_ERROR.append(msg)
         logging.error("{}".format(stderr))
-        SUMA_OUTPUT.append("NIM operation failed - rc:{}".format(ret))
-        module.fail_json(msg="NIM Master Command: {} => Error :{}". \
-                         format(nim_params, stderr.split('\n')))
+        SUMA_ERROR.append("{}".format(stderr))
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     return ret, stdout
 
@@ -667,7 +672,8 @@ def suma_list(module):
         msg = "SUMA Error: list command: '{}' failed with return code {}". \
                format(cmde, ret)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     SUMA_OUTPUT.append('List SUMA tasks:')
     SUMA_OUTPUT.append(stdout.split('\n'))
@@ -717,10 +723,10 @@ def suma_edit(module):
 
             cmde += ' -s "{}"'.format(PARAMS['sched_time'])
         else:
-            logging.error("Error: SUMA edit command: '{}' Bad schedule time".\
-                          format(cmde))
-            module.fail_json(msg="SUMA edit command: Bad schedule time {}". \
-                             format(PARAMS['sched_time']))
+            msg = "Error: SUMA edit command: '{}' Bad schedule time".format(cmde)
+            logging.error(msg)
+            SUMA_ERROR.append(msg)
+            module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     cmde += ' {}'.format(PARAMS['task_id'])
     ret, stdout, stderr = module.run_command(cmde)
@@ -729,7 +735,8 @@ def suma_edit(module):
         msg = "SUMA Error: edit command: '{}' failed with return code {}". \
                format(cmde, ret)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     SUMA_OUTPUT.append("Edit SUMA task {}".format(PARAMS['task_id']))
     SUMA_OUTPUT.append(stdout.split('\n'))
@@ -748,7 +755,8 @@ def suma_unschedule(module):
         msg = "SUMA Error: unschedule command: '{}' failed with return code {}". \
                format(cmde, ret)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     SUMA_OUTPUT.append("Unschedule suma task: {}".format(PARAMS['task_id']))
     SUMA_OUTPUT.append(stdout.split('\n'))
@@ -767,7 +775,8 @@ def suma_delete(module):
         msg = "SUMA Error: delete command: '{}' failed with return code {}". \
                format(cmde, ret)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     SUMA_OUTPUT.append("Delete SUMA task {}". \
                        format(PARAMS['task_id']))
@@ -787,7 +796,8 @@ def suma_config(module):
         msg = "SUMA Error: config command: '{}' failed with return code {}". \
                format(cmde, ret)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     SUMA_OUTPUT.append('SUMA global configuration settings:')
     SUMA_OUTPUT.append(stdout.split('\n'))
@@ -806,7 +816,8 @@ def suma_default(module):
         msg = "SUMA Error: default command: '{}' failed with return code {}". \
                format(cmde, ret)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     SUMA_OUTPUT.append('SUMA default task:')
     SUMA_OUTPUT.append(stdout.split('\n'))
@@ -837,16 +848,19 @@ def suma_down_prev(module):
         if req_oslevel == 'Latest':
             msg = 'Oslevel target could not be empty or equal "Latest" when target machine list is empty'
             logging.error(msg)
-            module.fail_json(msg=msg)
+            SUMA_ERROR.append(msg)
+            module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
         elif re.match(r"^([0-9]{4}-[0-9]{2})(-00|-00-0000)$", req_oslevel):
             msg = 'When no Service Pack is provided , a target machine list is required'
             logging.error(msg)
-            module.fail_json(msg=msg)
+            SUMA_ERROR.append(msg)
+            module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
     else:
         if re.match(r"^([0-9]{4})(|-00|-00-00|-00-00-0000)$", req_oslevel):
             msg = 'Specify a non 0 value for the Technical Level or the Service Pack'
             logging.error(msg)
-            module.fail_json(msg=msg)
+            SUMA_ERROR.append(msg)
+            module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     # =========================================================================
     # build NIM lpp_source list
@@ -857,7 +871,8 @@ def suma_down_prev(module):
         msg = "SUMA Error: Getting the lpp_source list - rc:{}, error:{}". \
               format(ret, nim_lpp_sources)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     logging.debug("lpp source list: {}".format(nim_lpp_sources))
 
@@ -879,14 +894,14 @@ def suma_down_prev(module):
 
     logging.info("SUMA - Target list: {}".format(len(targets_list)))
     logging.info("SUMA - Target clients: {}".format(len(target_clients)))
-    SUMA_OUTPUT.append("SUMA - Target list: {}".format(len(targets_list)))
 
     if len(targets_list) != 0 and len(target_clients) == 0:
         # the tagets_list doesn't match any NIM clients
         msg = "SUMA Error: The target patern '{}' does not match any NIM client". \
                format(PARAMS['targets'])
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     # =========================================================================
     # Launch threads to collect information on targeted nim clients
@@ -918,11 +933,16 @@ def suma_down_prev(module):
     if len(targets_list) != 0 and len(clients_oslevel) == 0:
         msg = "SUMA Error: Cannot retrieve oslevel for any NIM client of the target list"
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
+
+    logging.debug("oslevel cleaned dict: {}".format(clients_oslevel))
 
     if len(removed_oslevel) != 0:
-        logging.debug("oslevel cleaned dict: {}".format(clients_oslevel))
-        logging.warn("SUMA - unavailable client list: {}".format(removed_oslevel))
+        msg = "SUMA - unavailable client list: {}".format(removed_oslevel)
+        SUMA_ERROR.append(msg)
+        SUMA_OUTPUT.append(msg)
+        logging.warn(msg)
 
     # =========================================================================
     # compute SUMA request type based on oslevel property
@@ -931,7 +951,8 @@ def suma_down_prev(module):
     if rq_type == 'ERROR':
         msg = "SUMA Error: Invalid oslevel: '{}'".format(PARAMS['req_oslevel'])
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     PARAMS['RqType'] = rq_type
 
@@ -945,7 +966,8 @@ def suma_down_prev(module):
         msg = "SUMA Error: compute_rq_name - rc:{}, error:{}". \
                       format(ret, rq_name)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_OUTPUT.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     PARAMS['RqName'] = rq_name
 
@@ -964,17 +986,19 @@ def suma_down_prev(module):
         msg = "SUMA Error: There is no target machine matching the requested oslevel {}.". \
                format(rq_name[:10])
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     # ========================================================================= 
     # metadata does not match any fixes
     # =========================================================================
     if not rq_name or not rq_name.strip():
-        logging.error("SUMA - Error: oslevel {} doesn't match any fixes".\
-                      format(PARAMS['req_oslevel']))
-        module.fail_json( \
-                      msg="SUMA - Error:oslevel {} doesn't match any fixes".\
-                      format(PARAMS['req_oslevel']))
+        msg = "SUMA - Error: oslevel {} doesn't match any fixes".\
+                      format(PARAMS['req_oslevel'])
+        logging.error(msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
+
 
     logging.debug("Suma req Name: {}".format(rq_name))
 
@@ -994,7 +1018,8 @@ def suma_down_prev(module):
     if ret != 0:
         msg = "SUMA Error: compute_dl_target - {}".format(dl_target)
         logging.error(msg)
-        module.fail_json(msg=msg)
+        SUMA_ERROR.append(msg)
+        module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     PARAMS['DLTarget'] = dl_target
 
@@ -1084,12 +1109,10 @@ def suma_down_prev(module):
                 if matched:
                     skipped = int(matched.group(1))
 
-            logging.info( \
-                  "Download summary : {} downloaded, {} failed, {} skipped". \
-                  format(downloaded, failed, skipped))
-            SUMA_OUTPUT.append( \
-                  "Download summary : {} downloaded, {} failed, {} skipped". \
-                  format(downloaded, failed, skipped))
+            msg = "Download summary : {} downloaded, {} failed, {} skipped". \
+                  format(downloaded, failed, skipped)
+            logging.info(msg)
+            SUMA_OUTPUT.append(msg)
 
             if downloaded != 0:
                 SUMA_CHANGED = True
@@ -1117,6 +1140,7 @@ if __name__ == '__main__':
 
     SUMA_CHANGED = False
     SUMA_OUTPUT = []
+    SUMA_ERROR = []
     PARAMS = {}
 
     module = AnsibleModule(
