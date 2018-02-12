@@ -68,14 +68,14 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
         output = exc.output
         ret_code = exc.returncode
         if exit_on_error is True:
-            msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'. \
-                    format(cmd, exc.cmd, ret_code, output)
+            msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'\
+                  .format(cmd, exc.cmd, ret_code, output)
             module.fail_json(msg=msg)
 
     except OSError as exc:
         # uncatched exception
-        msg = 'Command: {} Exception.Args{}'. \
-               format(cmd, exc.args)
+        msg = 'Command: {} Exception.Args{}'\
+              .format(cmd, exc.args)
         module.fail_json(msg=msg)
 
     if ret_code == 0:
@@ -105,6 +105,9 @@ def get_nim_clients_info(module, lpar_type):
 
     cmd = ['lsnim', '-t', lpar_type, '-l']
     (ret, std_out) = exec_cmd(cmd, module)
+    if ret != 0:
+        logging.error('Error: Cannot list NIM {} objects'.format(lpar_type))
+        module.fail_json(msg="Error: Cannot list NIM {} objects".format(lpar_type))
 
     # lpar name and associated Cstate
     obj_key = ""
@@ -239,8 +242,8 @@ def check_vios_targets(targets):
             return None
 
         # check vios not already exists in the target list
-        if tuple_elts[0] in vios_list or \
-           (tuple_len == 2 and (tuple_elts[1] in vios_list or tuple_elts[0] == tuple_elts[1])):
+        if tuple_elts[0] in vios_list or (tuple_len == 2
+           and (tuple_elts[1] in vios_list or tuple_elts[0] == tuple_elts[1])):
             OUTPUT.append('Malformed VIOS targets {}. Duplicated VIOS'
                           .format(targets))
             logging.error('Malformed VIOS targets {}. Duplicated VIOS'
@@ -248,8 +251,8 @@ def check_vios_targets(targets):
             return None
 
         # check vios is knowed by the NIM master - if not ignore it
-        if tuple_elts[0] not in NIM_NODE['nim_vios'] or \
-           (tuple_len == 2 and tuple_elts[1] not in NIM_NODE['nim_vios']):
+        if tuple_elts[0] not in NIM_NODE['nim_vios'] \
+           or (tuple_len == 2 and tuple_elts[1] not in NIM_NODE['nim_vios']):
             continue
 
         if tuple_len == 2:
@@ -679,8 +682,8 @@ if __name__ == '__main__':
         if match_key:
             time_limit = time.strptime(MODULE.params['time_limit'], '%m/%d/%Y %H:%M')
         else:
-            msg = 'Malformed time limit "{}", please use mm/dd/yyyy hh:mm format.'. \
-                    format(MODULE.params['time_limit'])
+            msg = 'Malformed time limit "{}", please use mm/dd/yyyy hh:mm format.'\
+                  .format(MODULE.params['time_limit'])
             MODULE.fail_json(msg=msg)
 
     # Handle playbook variables
@@ -712,7 +715,7 @@ if __name__ == '__main__':
     # Perfom checks
     # =========================================================================
     ret = check_vios_targets(targets)
-    if (ret is None) or (not ret):
+    if (not ret) or (ret is None):
         OUTPUT.append('Empty target list')
         logging.warn('Warning: Empty target list: "{}"'.format(targets))
     else:

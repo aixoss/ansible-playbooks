@@ -86,12 +86,12 @@ def exec_cmd(cmd, module):
     try:
         std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as exc:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-               format(cmd, exc.cmd, exc.output, exc.returncode)
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
+              .format(cmd, exc.cmd, exc.output, exc.returncode)
         module.fail_json(msg=msg)
     except Exception as exc:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-               format(cmd, exc.args, std_out, std_err)
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
+              .format(cmd, exc.args, std_out, std_err)
         module.fail_json(msg=msg)
 
     #########################################################
@@ -127,8 +127,8 @@ def get_nim_clients_info(module):
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (std_out, std_err) = proc.communicate()
     except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
+              .format(cmd, excep.args, std_out, std_err)
         module.fail_json(msg=msg)
 
     # client name and associated Cstate
@@ -163,8 +163,8 @@ def get_nim_master_info(module):
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         (std_out, std_err) = proc.communicate()
     except Exception as excep:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'. \
-                format(cmd, excep.args, std_out, std_err)
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
+              .format(cmd, excep.args, std_out, std_err)
         module.fail_json(msg=msg)
 
     # client name and associated Cstate
@@ -446,28 +446,28 @@ def print_node_by_columns():
     widths['cstate'] += 2
 
     # build the array
-    sep = '\n' + '+' + '-' * widths['machine'] + '+' + \
-          '-' * widths['oslevel'] + '+' + '-' * widths['cstate'] + '+'
+    sep = '\n' + '+' + '-' * widths['machine'] + '+' \
+          + '-' * widths['oslevel'] + '+' + '-' * widths['cstate'] + '+'
 
-    head = '\n' + \
-           '|' + '{:^{wid}}'.format('machine', wid=widths['machine']) + \
-           '|' + '{:^{wid}}'.format('oslevel', wid=widths['oslevel']) + \
-           '|' + '{:^{wid}}'.format('Cstate', wid=widths['cstate']) + '|'
+    head = '\n' \
+           + '|' + '{:^{wid}}'.format('machine', wid=widths['machine']) \
+           + '|' + '{:^{wid}}'.format('oslevel', wid=widths['oslevel']) \
+           + '|' + '{:^{wid}}'.format('Cstate', wid=widths['cstate']) + '|'
 
     result = sep + head + sep
 
     for (k, val) in NIM_NODE['nim_clients'].items():
-        line = '\n' + \
-               '|' + '{0:^{1}}'.format(k, widths['machine']) + \
-               '|' + '{0:^{1}}'.format(val['oslevel'], widths['oslevel']) + \
-               '|' + '{0:^{1}}'.format(val['cstate'], widths['cstate']) + '|'
+        line = '\n' \
+               + '|' + '{0:^{1}}'.format(k, widths['machine']) \
+               + '|' + '{0:^{1}}'.format(val['oslevel'], widths['oslevel']) \
+               + '|' + '{0:^{1}}'.format(val['cstate'], widths['cstate']) + '|'
         result += line
 
     # master
-    line = '\n' + \
-           '|' + '{0:^{1}}'.format('master', widths['machine']) + \
-           '|' + '{0:^{1}}'.format(NIM_NODE['master']['oslevel'], widths['oslevel']) + \
-           '|' + '{0:^{1}}'.format(NIM_NODE['master']['cstate'], widths['cstate']) + '|'
+    line = '\n' \
+           + '|' + '{0:^{1}}'.format('master', widths['machine']) \
+           + '|' + '{0:^{1}}'.format(NIM_NODE['master']['oslevel'], widths['oslevel']) \
+           + '|' + '{0:^{1}}'.format(NIM_NODE['master']['cstate'], widths['cstate']) + '|'
     result += line
 
     result += sep
@@ -703,8 +703,9 @@ def find_resource_by_client(lpp_type, lpp_time, oslevel_elts):
         # reading lpp_source table until we have found the good sp
         for lpp in lpp_source_list:
             lpp_elts = lpp.split('-')
-            if lpp_elts[0] != oslevel_elts[0] or \
-               lpp_elts[1] != oslevel_elts[1] or lpp_elts[2] <= oslevel_elts[2]:
+            if lpp_elts[0] != oslevel_elts[0] \
+               or lpp_elts[1] != oslevel_elts[1] \
+               or lpp_elts[2] <= oslevel_elts[2]:
                 continue
             lpp_source = lpp
             if lpp_time == 'next':
@@ -749,9 +750,10 @@ def nim_update(module):
     logging.info('NIM - {} update operation on {} with {} lpp_source'
                  .format(log_async, NIM_PARAMS['targets'], lpp_source))
 
-    if NIM_PARAMS['async'] == 'true' and \
-       (lpp_source == 'latest_tl' or lpp_source == 'latest_sp' or
-        lpp_source == 'next_tl' or lpp_source == 'next_sp'):
+    if NIM_PARAMS['async'] == 'true' and (lpp_source == 'latest_tl'
+                                          or lpp_source == 'latest_sp'
+                                          or lpp_source == 'next_tl'
+                                          or lpp_source == 'next_sp'):
         logging.warning('Force customization synchronously')
         async_update = 'no'
 
@@ -796,8 +798,8 @@ def nim_update(module):
 
             # get lpp source
             new_lpp_source = ''
-            if (lpp_source == 'latest_tl') or (lpp_source == 'latest_sp') or \
-               (lpp_source == 'next_tl') or (lpp_source == 'next_sp'):
+            if lpp_source == 'latest_tl' or lpp_source == 'latest_sp' \
+               or lpp_source == 'next_tl' or lpp_source == 'next_sp':
                 lpp_source_array = lpp_source.split('_')
                 lpp_time = lpp_source_array[0]
                 lpp_type = lpp_source_array[1]
@@ -828,9 +830,9 @@ def nim_update(module):
                 logging.warning('Machine {} has different release than {}'
                                 .format(target, oslevel_elts[0]))
                 continue
-            elif cur_oslevel_elts[1] > oslevel_elts[1] or \
-                 cur_oslevel_elts[1] == oslevel_elts[1] and \
-                 cur_oslevel_elts[2] >= oslevel_elts[2]:
+            elif (cur_oslevel_elts[1] > oslevel_elts[1]
+                  or cur_oslevel_elts[1] == oslevel_elts[1]
+                  and cur_oslevel_elts[2] >= oslevel_elts[2]):
                 logging.warning('Machine {} is already at same or higher level than {}'
                                 .format(target, '-'.join(oslevel_elts)))
                 continue
@@ -939,8 +941,8 @@ def nim_compare(module):
         logging.error("Error: NIM Command: {} failed with return code {}"
                       .format(cmde, ret))
         module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+            msg="NIM Command: {} failed with return code {} => Error :{}"
+            .format(cmde, ret, stderr.split('\n')))
 
     NIM_OUTPUT.append('compare installation inventory:')
     NIM_OUTPUT.append(stdout.split('\n'))
@@ -991,8 +993,8 @@ def nim_script(module):
         logging.error("Error: NIM Command: {} failed with return code {}"
                       .format(cmde, ret))
         module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+            msg="NIM Command: {} failed with return code {} => Error :{}"
+            .format(cmde, ret, stderr.split('\n')))
 
     NIM_CHANGED = True
     return ret
@@ -1033,8 +1035,8 @@ def nim_allocate(module):
         logging.error("Error: NIM Command: {} failed with return code {}"
                       .format(cmde, ret))
         module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+            msg="NIM Command: {} failed with return code {} => Error :{}"
+            .format(cmde, ret, stderr.split('\n')))
 
     NIM_CHANGED = True
     return ret
@@ -1075,8 +1077,8 @@ def nim_deallocate(module):
         logging.error("Error: NIM Command: {} failed with return code {}"
                       .format(cmde, ret))
         module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+            msg="NIM Command: {} failed with return code {} => Error :{}"
+            .format(cmde, ret, stderr.split('\n')))
 
     NIM_CHANGED = True
     return ret
@@ -1125,8 +1127,8 @@ def nim_bos_inst(module):
         logging.error("Error: NIM Command: {} failed with return code {}"
                       .format(cmde, ret))
         module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+            msg="NIM Command: {} failed with return code {} => Error :{}"
+            .format(cmde, ret, stderr.split('\n')))
 
     NIM_CHANGED = True
     return ret
@@ -1165,8 +1167,8 @@ def nim_define_script(module):
         logging.error("Error: NIM Command: {} failed with return code {}"
                       .format(cmde, ret))
         module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+            msg="NIM Command: {} failed with return code {} => Error :{}"
+            .format(cmde, ret, stderr.split('\n')))
 
     NIM_CHANGED = True
     return ret
@@ -1204,8 +1206,8 @@ def nim_remove(module):
         logging.error("Error: NIM Command: {} failed with return code {}"
                       .format(cmde, ret))
         module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+            msg="NIM Command: {} failed with return code {} => Error :{}"
+            .format(cmde, ret, stderr.split('\n')))
 
     NIM_CHANGED = True
     return ret
@@ -1268,8 +1270,8 @@ def nim_reset(module):
             logging.error("Error: NIM Command: {} failed with return code {}"
                           .format(cmde, ret))
             module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+                msg="NIM Command: {} failed with return code {} => Error :{}"
+                .format(cmde, ret, stderr.split('\n')))
 
         NIM_CHANGED = True
 
@@ -1313,8 +1315,8 @@ def nim_reboot(module):
         logging.error("Error: NIM Command: {} failed with return code {}"
                       .format(cmde, ret))
         module.fail_json(
-               msg="NIM Command: {} failed with return code {} => Error :{}"
-               .format(cmde, ret, stderr.split('\n')))
+            msg="NIM Command: {} failed with return code {} => Error :{}"
+            .format(cmde, ret, stderr.split('\n')))
 
     NIM_CHANGED = True
     return ret

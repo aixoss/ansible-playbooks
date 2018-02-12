@@ -695,10 +695,10 @@ if __name__ == '__main__':
 
     TARGETS = expand_targets(re.split(r'[,\s]', MODULE.params['targets']), NIM_CLIENTS)
     FLRTVC_PARAMS = {'apar_type': MODULE.params['apar'],
-                     'apar_csv':  MODULE.params['csv'],
-                     'filesets':  MODULE.params['filesets'],
-                     'dst_path':  MODULE.params['path'],
-                     'verbose':   MODULE.params['verbose']}
+                     'apar_csv': MODULE.params['csv'],
+                     'filesets': MODULE.params['filesets'],
+                     'dst_path': MODULE.params['path'],
+                     'verbose': MODULE.params['verbose']}
     FORCE = MODULE.params['force']
     # TBC - Temporary - invalidate the force option
     FORCE = False
