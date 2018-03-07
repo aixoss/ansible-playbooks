@@ -108,19 +108,21 @@ def exec_cmd(cmd, module):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def get_nim_clients_info(module):
+def get_nim_clients_info(module, lpar_type):
     """
     Get the list of the standalones defined on the nim master, and get their
     cstate.
-
-    return the list of the name of the standlone objects defined on the
+    Get the list of the vios defined on the nim master, and get their
+    cstate.
+    return the list of the name of the standlone and vios objects defined on the
            nim master and their associated cstate value
     """
     std_out = ''
     std_err = ''
     info_hash = {}
 
-    cmd = ['lsnim', '-t', 'standalone', '-l']
+
+    cmd = ['lsnim', '-t', lpar_type, '-l']
 
     try:
         proc = subprocess.Popen(cmd, shell=False, stdin=None,
@@ -137,11 +139,38 @@ def get_nim_clients_info(module):
         if match_key:
             obj_key = match_key.group(1)
             info_hash[obj_key] = {}
-        else:
-            match_cstate = re.match(r"^\s+Cstate\s+=\s+(.*)$", line)
-            if match_cstate:
-                cstate = match_cstate.group(1)
-                info_hash[obj_key]['cstate'] = cstate
+            info_hash[obj_key]['type'] = lpar_type
+            info_hash[obj_key]['cstate'] = ''
+            info_hash[obj_key]['mgmt_hmc_id'] = ''
+            info_hash[obj_key]['mgmt_id'] = ''
+            info_hash[obj_key]['mgmt_cec_serial'] = ''
+            info_hash[obj_key]['oslevel'] = ''
+            continue
+        match_cstate = re.match(r"^\s+Cstate\s+=\s+(.*)$", line)
+
+        match_cstate = re.match(r"^\s+Cstate\s+=\s+(.*)$", line)
+        if match_cstate:
+            cstate = match_cstate.group(1)
+            info_hash[obj_key]['cstate'] = cstate
+            continue
+
+        match_mgmtprof = re.match(r"^\s+mgmt_profile1\s+=\s+(.*)$", line)
+
+        if match_mgmtprof:
+            mgmt_elts = match_mgmtprof.group(1).split()
+            if len(mgmt_elts) == 3:
+                info_hash[obj_key]['mgmt_hmc_id'] = mgmt_elts[0]
+                info_hash[obj_key]['mgmt_id'] = mgmt_elts[1]
+                info_hash[obj_key]['mgmt_cec_serial'] = mgmt_elts[2]
+            else:
+                logging.warning('WARNING: VIOS {} management profile has not 3 elements: {}'.
+                                format(obj_key, match_mgmtprof.group(1)))
+            continue
+
+        match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line)
+        if match_if:
+            info_hash[obj_key]['ip'] = match_if.group(1)
+            continue
 
     return info_hash
 
@@ -178,7 +207,7 @@ def get_nim_master_info(module):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def get_nim_clients_oslevel():
+def get_nim_clients_oslevel(type):
     """
     Get the oslevel of the standalones defined on the nim master.
 
@@ -191,7 +220,7 @@ def get_nim_clients_oslevel():
     threads = []
     clients_oslevel = {}
 
-    for machine in NIM_NODE['nim_clients']:
+    for machine in NIM_NODE[type]:
         process = threading.Thread(target=run_oslevel_cmd,
                                    args=(machine, clients_oslevel))
         process.start()
@@ -289,21 +318,31 @@ def build_nim_node(module):
     # =========================================================================
     # Build nim_clients info list
     # =========================================================================
-    nim_clients = {}
-    nim_clients = get_nim_clients_info(module)
+    standalones = {}
+    standalones = get_nim_clients_info(module, 'standalone')
+    NIM_NODE['standalone'] = standalones
+    logging.debug('NIM Clients: {}'.format(standalones))
 
-    NIM_NODE['nim_clients'] = nim_clients
-    logging.debug('NIM Clients: {}'.format(nim_clients))
+    vioses = {}
+    vioses = get_nim_clients_info(module, 'vios')
+    NIM_NODE['vios'] = vioses
+    logging.debug('NIM VIOS Clients: {}'.format(vioses))
 
     # =========================================================================
     # get the oslevel of each client
     # =========================================================================
     clients_oslevel = {}
-    clients_oslevel = get_nim_clients_oslevel()
+    clients_oslevel = get_nim_clients_oslevel('standalone')
 
     for (k, val) in clients_oslevel.items():
-        NIM_NODE['nim_clients'][k]['oslevel'] = val
-    logging.debug('NIM Clients: {}'.format(nim_clients))
+        NIM_NODE['standalone'][k]['oslevel'] = val
+    logging.debug('NIM Clients: {}'.format(clients_oslevel))
+
+    clients_oslevel = get_nim_clients_oslevel('vios')
+
+    for (k, val) in clients_oslevel.items():
+        NIM_NODE['vios'][k]['oslevel'] = val
+    logging.debug('NIM Clients: {}'.format(clients_oslevel))
 
     # =========================================================================
     # Build master info list
@@ -312,6 +351,7 @@ def build_nim_node(module):
 
     NIM_NODE['master'] = {}
     NIM_NODE['master']['cstate'] = cstate
+    NIM_NODE['master']['type'] = 'master'
     logging.debug('NIM master: Cstate = {}'.format(cstate))
 
     # =========================================================================
@@ -367,7 +407,7 @@ def expand_targets(targets):
             for i in range(int(start), int(end) + 1):
                 # target_results.append('{0}{1:02}'.format(name, i))
                 curr_name = name + str(i)
-                if curr_name in NIM_NODE['nim_clients']:
+                if curr_name in NIM_NODE['standalone']:
                     clients.append(curr_name)
 
             continue
@@ -380,7 +420,7 @@ def expand_targets(targets):
 
             name = rmatch.group(1)
 
-            for curr_name in NIM_NODE['nim_clients']:
+            for curr_name in NIM_NODE['standalone']:
                 if re.match(r"^%s\.*" % name, curr_name):
                     clients.append(curr_name)
 
@@ -390,13 +430,13 @@ def expand_targets(targets):
         # Build target(s) from: all or *
         # -----------------------------------------------------------
         if target.upper() == 'ALL' or target == '*':
-            clients = list(NIM_NODE['nim_clients'])
+            clients = list(NIM_NODE['standalone'])
             continue
 
         # -----------------------------------------------------------
         # Build target(s) from: quimby05 quimby08 quimby12
         # -----------------------------------------------------------
-        if (target in NIM_NODE['nim_clients']) or (target == 'master'):
+        if (target in NIM_NODE['standalone']) or (target == 'master'):
             clients.append(target)
 
     return list(set(clients))
@@ -414,24 +454,36 @@ def print_node_by_columns():
     # -----------------------------------------------------------------
     # Print node in column format
     #
-    #    +---------+-----------------+---------------------------+
-    #    | machine |     oslevel     |          Cstate           |
-    #    +---------+-----------------+---------------------------+
-    #    | client1 | 7100-01-04-1216 | ready for a NIM operation |
-    #    | client2 | 7100-03-01-1341 | ready for a NIM operation |
-    #    | client3 | 7100-04-00-0000 | ready for a NIM operation |
-    #    | master  | 7200-01-00-0000 |                           |
-    #    +---------+-----------------+---------------------------+
+    #    +---------+------------+-----------------+---------------------------+
+    #    | machine |    type    |     oslevel     |          Cstate           |
+    #    +---------+------------+-----------------+---------------------------+
+    #    | client1 | standalone | 7100-01-04-1216 | ready for a NIM operation |
+    #    | client2 |            | 7100-03-01-1341 | ready for a NIM operation |
+    #    | client3 |            | 7100-04-00-0000 | ready for a NIM operation |
+    #    | vios1   |   vios     | 6100-04-00-0000 | ready for a NIM operation |
+    #    | master  |            | 7200-01-00-0000 |                           |
+    #    +---------+------------}-----------------+---------------------------+
     #
 
     widths = {}
     result = ''
     widths['machine'] = 7
+    widths['type'] = 10
     widths['oslevel'] = 7
     widths['cstate'] = 6
 
     # get the longest string size for each column
-    for (k, val) in NIM_NODE['nim_clients'].items():
+    for (k, val) in NIM_NODE['standalone'].items():
+        if widths['machine'] < len(k):
+            widths['machine'] = len(k)
+
+        if widths['oslevel'] < len(val['oslevel']):
+            widths['oslevel'] = len(val['oslevel'])
+
+        if widths['cstate'] < len(val['cstate']):
+            widths['cstate'] = len(val['cstate'])
+
+    for (k, val) in NIM_NODE['vios'].items():
         if widths['machine'] < len(k):
             widths['machine'] = len(k)
 
@@ -442,23 +494,37 @@ def print_node_by_columns():
             widths['cstate'] = len(val['cstate'])
 
     widths['machine'] += 2
+    widths['type'] += 2
     widths['oslevel'] += 2
     widths['cstate'] += 2
 
     # build the array
     sep = '\n' + '+' + '-' * widths['machine'] + '+' \
-          + '-' * widths['oslevel'] + '+' + '-' * widths['cstate'] + '+'
+          + '-' * widths['type'] + '+' + '-' * widths['oslevel'] \
+          + '+' + '-' * widths['cstate'] + '+'
 
     head = '\n' \
            + '|' + '{:^{wid}}'.format('machine', wid=widths['machine']) \
+           + '|' + '{:^{wid}}'.format('type', wid=widths['type']) \
            + '|' + '{:^{wid}}'.format('oslevel', wid=widths['oslevel']) \
            + '|' + '{:^{wid}}'.format('Cstate', wid=widths['cstate']) + '|'
 
     result = sep + head + sep
 
-    for (k, val) in NIM_NODE['nim_clients'].items():
+    # standalone
+    for (k, val) in NIM_NODE['standalone'].items():
         line = '\n' \
                + '|' + '{0:^{1}}'.format(k, widths['machine']) \
+               + '|' + '{0:^{1}}'.format(val['type'], widths['type']) \
+               + '|' + '{0:^{1}}'.format(val['oslevel'], widths['oslevel']) \
+               + '|' + '{0:^{1}}'.format(val['cstate'], widths['cstate']) + '|'
+        result += line
+
+    # vios
+    for (k, val) in NIM_NODE['vios'].items():
+        line = '\n' \
+               + '|' + '{0:^{1}}'.format(k, widths['machine']) \
+               + '|' + '{0:^{1}}'.format(val['type'], widths['type']) \
                + '|' + '{0:^{1}}'.format(val['oslevel'], widths['oslevel']) \
                + '|' + '{0:^{1}}'.format(val['cstate'], widths['cstate']) + '|'
         result += line
@@ -466,6 +532,7 @@ def print_node_by_columns():
     # master
     line = '\n' \
            + '|' + '{0:^{1}}'.format('master', widths['machine']) \
+           + '|' + '{0:^{1}}'.format(NIM_NODE['master']['type'], widths['type']) \
            + '|' + '{0:^{1}}'.format(NIM_NODE['master']['oslevel'], widths['oslevel']) \
            + '|' + '{0:^{1}}'.format(NIM_NODE['master']['cstate'], widths['cstate']) + '|'
     result += line
@@ -789,7 +856,7 @@ def nim_update(module):
             if target == 'master':
                 cur_oslevel = NIM_NODE['master']['oslevel']
             else:
-                cur_oslevel = NIM_NODE['nim_clients'][target]['oslevel']
+                cur_oslevel = NIM_NODE['standalone'][target]['oslevel']
             logging.debug('NIM - current oslevel: {}'.format(cur_oslevel))
             if (cur_oslevel is None) or (not cur_oslevel.strip()):
                 logging.warning('Cannot get oslevel for machine {}'.format(target))
@@ -846,6 +913,62 @@ def nim_update(module):
 
     NIM_CHANGED = True
     return
+
+
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
+def nim_maintenance(module):
+    """
+    Apply an maintenance operation (commit) on nim clients (targets)
+
+    return: a return code (O if Ok)
+    """
+
+    global NIM_CHANGED
+    global NIM_NODE
+
+    logging.info('NIM - {} maintenance operation on {}'.\
+                 format(NIM_PARAMS['operation'], NIM_PARAMS['targets']))
+
+    target_list = expand_targets(NIM_PARAMS['targets'])
+    logging.debug('NIM - Target list: {}'.format(target_list))
+
+    flag = '-c' # initialized to commit flag
+
+    retcode = 0
+    cmde =''
+    for target in target_list:
+        logging.info('NIM - perform smaintenance operation for client(s) {}'. \
+                      format(target))
+        if target in NIM_NODE['standalone']:
+            cmde = '/usr/sbin/nim -o maint -a installp_flags={} -a filesets=ALL {}'. \
+                    format(flag, target)
+        else:
+            cmde = cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
+                   target, '"/usr/sbin/installp -c all"']
+
+        logging.debug('NIM - Command:{}'.format(cmde))
+        NIM_OUTPUT.append('NIM - Command:{}'.format(cmde))
+
+        ret, stdout, stderr = module.run_command(cmde)
+
+        logging.info("[RC] {}".format(ret))
+        logging.info("[STDOUT] {}".format(stdout))
+        logging.info("[STDERR] {}".format(stderr))
+        NIM_OUTPUT.append('{}'.format(stderr))
+
+        NIM_OUTPUT.append('NIM - Finish Commiting {}.'.format(target))
+        if ret != 0:
+            logging.error("Error: NIM Command: {} failed with return code {}". \
+                          format(cmde, ret))
+            NIM_OUTPUT.append('NIM - Error: Command {} returns above error!'. \
+                          format(cmde))
+            retcode = 1
+        else:
+            logging.info("nim maintenance operation: {} done".format(cmde))
+            NIM_CHANGED = True
+
+    return retcode
 
 
 # ----------------------------------------------------------------
@@ -1091,7 +1214,7 @@ def nim_bos_inst(module):
     Install a given list of nim clients.
     A specified group of resource (resource) is used to install the nim
         clients (targets).
-        If specified a script is applied to customized the installation.
+        If specified, a script is applied to customized the installation.
 
     return: a return code (0 if Ok)
     """
@@ -1245,7 +1368,7 @@ def nim_reset(module):
     targets_to_reset = []
     targets_discarded = []
     for target in target_list:
-        if NIM_NODE['nim_clients'][target]['cstate'] != 'ready for a NIM operation':
+        if NIM_NODE['standalone'][target]['cstate'] != 'ready for a NIM operation':
             targets_to_reset.append(target)
         else:
             targets_discarded.append(target)
@@ -1344,10 +1467,11 @@ if __name__ == '__main__':
             location=dict(required=False, type='str'),
             group=dict(required=False, type='str'),
             force=dict(choices=['true', 'false'], default='false', type='str'),
+            operation=dict(required=False, type='str'),
             action=dict(choices=['update', 'master_setup', 'check', 'compare',
                                  'script', 'allocate', 'deallocate',
                                  'bos_inst', 'define_script', 'remove',
-                                 'reset', 'reboot'], type='str'),
+                                 'reset', 'reboot', 'maintenance'], type='str'),
         ),
         required_if=[
             ['action', 'update', ['lpp_source', 'targets']],
@@ -1360,7 +1484,8 @@ if __name__ == '__main__':
             ['action', 'define_script', ['resource', 'location']],
             ['action', 'remove', ['resource']],
             ['action', 'reset', ['targets']],
-            ['action', 'reboot', ['targets']]
+            ['action', 'reboot', ['targets']],
+            ['action', 'maintenance', ['targets']]
         ],
         supports_check_mode=True
     )
@@ -1384,7 +1509,9 @@ if __name__ == '__main__':
     group = MODULE.params['group']
     force = MODULE.params['force']
     action = MODULE.params['action']
+    operation = MODULE.params['operation']
 
+    description = ''
     if MODULE.params['description']:
         description = MODULE.params['description']
     else:
@@ -1406,6 +1533,11 @@ if __name__ == '__main__':
         NIM_PARAMS['async'] = async_par
         NIM_PARAMS['force'] = force
         nim_update(MODULE)
+
+    elif action == 'maintenance':
+        NIM_PARAMS['targets'] = targets
+        NIM_PARAMS['operation'] = operation
+        nim_maintenance(MODULE)
 
     elif action == 'master_setup':
         NIM_PARAMS['device'] = device
