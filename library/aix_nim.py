@@ -121,7 +121,6 @@ def get_nim_clients_info(module, lpar_type):
     std_err = ''
     info_hash = {}
 
-
     cmd = ['lsnim', '-t', lpar_type, '-l']
 
     try:
@@ -927,25 +926,25 @@ def nim_maintenance(module):
     global NIM_CHANGED
     global NIM_NODE
 
-    logging.info('NIM - {} maintenance operation on {}'.\
-                 format(NIM_PARAMS['operation'], NIM_PARAMS['targets']))
+    logging.info('NIM - {} maintenance operation on {}'
+                 .format(NIM_PARAMS['operation'], NIM_PARAMS['targets']))
 
     target_list = expand_targets(NIM_PARAMS['targets'])
     logging.debug('NIM - Target list: {}'.format(target_list))
 
-    flag = '-c' # initialized to commit flag
+    flag = '-c'  # initialized to commit flag
 
     retcode = 0
-    cmde =''
+    cmde = ''
     for target in target_list:
-        logging.info('NIM - perform smaintenance operation for client(s) {}'. \
-                      format(target))
+        logging.info('NIM - perform smaintenance operation for client(s) {}'
+                     .format(target))
         if target in NIM_NODE['standalone']:
-            cmde = '/usr/sbin/nim -o maint -a installp_flags={} -a filesets=ALL {}'. \
-                    format(flag, target)
+            cmde = '/usr/sbin/nim -o maint -a installp_flags={} -a filesets=ALL {}'\
+                   .format(flag, target)
         else:
-            cmde = cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
-                   target, '"/usr/sbin/installp -c all"']
+            cmde = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', target,
+                    '"/usr/sbin/installp -c all"']
 
         logging.debug('NIM - Command:{}'.format(cmde))
         NIM_OUTPUT.append('NIM - Command:{}'.format(cmde))
@@ -959,10 +958,10 @@ def nim_maintenance(module):
 
         NIM_OUTPUT.append('NIM - Finish Commiting {}.'.format(target))
         if ret != 0:
-            logging.error("Error: NIM Command: {} failed with return code {}". \
-                          format(cmde, ret))
-            NIM_OUTPUT.append('NIM - Error: Command {} returns above error!'. \
-                          format(cmde))
+            logging.error("Error: NIM Command: {} failed with return code {}"
+                          .format(cmde, ret))
+            NIM_OUTPUT.append('NIM - Error: Command {} returns above error!'
+                              .format(cmde))
             retcode = 1
         else:
             logging.info("nim maintenance operation: {} done".format(cmde))
