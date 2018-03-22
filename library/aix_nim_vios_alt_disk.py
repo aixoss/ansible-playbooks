@@ -1141,7 +1141,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                            '"LANG=C; /usr/sbin/unmirrorvg rootvg 2>&1"']
                     (ret, std_out) = exec_cmd(cmd, module)
 
-                    if ret != 0:  # c_rsh command fail
+                    if ret != 0:  # c_rsh command Failed
                         altdisk_op_tab[vios_key] = "{} to unmirror rootvg on {}"\
                                                    .format(err_label, vios)
                         OUTPUT.append('    Failed to unmirror rootvg on {}: {}'
@@ -1150,7 +1150,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                                       .format(vios, std_out))
                         break
                     elif std_out.find('rootvg successfully unmirrored') == -1:
-                        # unmirror command fail
+                        # unmirror command Failed
                         altdisk_op_tab[vios_key] = "{} to unmirror rootvg on {}"\
                                                    .format(err_label, vios)
                         OUTPUT.append('    Failed to unmirror rootvg on {}: {}'
@@ -1206,7 +1206,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
 
                     (ret, std_out) = exec_cmd(cmd, module)
 
-                    if ret != 0:  # c_rsh command fail
+                    if ret != 0:  # c_rsh command Failed
                         altdisk_op_tab[vios_key] = "{} to mirror rootvg on {}"\
                                                    .format(err_label, vios)
                         OUTPUT.append('    Failed to mirror rootvg on {}: {}'
@@ -1221,7 +1221,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                         logging.info('Mirror rootvg on {} successful'
                                      .format(vios))
                     else:
-                        # mirror command fail
+                        # mirror command failed
                         altdisk_op_tab[vios_key] = "{} to mirror rootvg on {}"\
                                                    .format(err_label, vios)
                         OUTPUT.append('    Failed to mirror rootvg on {}: {}'
