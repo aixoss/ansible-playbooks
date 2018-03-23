@@ -15,6 +15,7 @@
 # limitations under the License.
 
 ######################################################################
+"""AIX FLRTVC: generate flrtvc report, download and install efix"""
 
 import logging
 import os
@@ -29,6 +30,7 @@ import tarfile
 import zipfile
 import stat
 # Ansible module 'boilerplate'
+# pylint: disable=wildcard-import,unused-wildcard-import
 from ansible.module_utils.basic import *
 
 DOCUMENTATION = """
@@ -115,7 +117,7 @@ def download(src, dst):
             logging.warn('EXCEPTION cmd={} rc={} output={}'
                          .format(exc.cmd, exc.returncode, exc.output))
             res = False
-            if exc.returncode is 3:
+            if exc.returncode == 3:
                 increase_fs(dst)
                 os.remove(dst)
                 download(src, dst)
@@ -126,10 +128,15 @@ def download(src, dst):
 
 @logged
 def unzip(src, dst):
+    """
+    Unzip source into the destination directory
+        - src (str): The url to unzip
+        - dst (str): The absolute destination path
+    """
     try:
         zfile = zipfile.ZipFile(src)
         zfile.extractall(dst)
-    except Exception as exc:
+    except (zipfile.BadZipfile, zipfile.LargeZipFile, RuntimeError) as exc:
         logging.warn('EXCEPTION {}'.format(exc))
         increase_fs(dst)
         unzip(src, dst)
@@ -137,6 +144,11 @@ def unzip(src, dst):
 
 @logged
 def locked_fileset(machine, fileset):
+    """
+    Check if a fileset is locked
+        - machine (str): The target machine
+        - fileset (str): Fileset to check
+    """
     try:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, ' {}'.format(fileset)]
         logging.debug(' '.join(cmd))
@@ -150,8 +162,14 @@ def locked_fileset(machine, fileset):
 
 @logged
 def remove_efix(machine, label):
+    """
+    Remove Efix with the given label on the machine
+        - machine (str): The target machine
+        - label   (str): Efix name to remove
+    """
     try:
-        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/sbin/emgr -r -L {}'.format(label)]
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
+               '/usr/sbin/emgr -r -L {}'.format(label)]
         logging.debug(' '.join(cmd))
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
         logging.debug('{}: command result is {}'.format(machine, stdout))
@@ -207,10 +225,10 @@ def check_prereq(epkg, ref, machine, force):
                 # ... extract current fileset level ...
                 with open(os.path.abspath(os.path.join(os.sep, ref)), 'r') as myfile:
                     found = False
-                    for line in myfile:
-                        if fileset in line:
+                    for myline in myfile:
+                        if fileset in myline:
                             found = True
-                            curlvl = line.split(':')[2]
+                            curlvl = myline.split(':')[2]
                             curlvl_i = list(map(int, curlvl.split(".")))
 
                             # ... and compare to min/max levels.
@@ -219,7 +237,7 @@ def check_prereq(epkg, ref, machine, force):
                                 res = False
                             break
 
-                    if found == False:
+                    if found is False:
                         res = False
 
     return res
@@ -338,7 +356,8 @@ def run_parser(machine, output, report):
         report  (str): The compact report
     """
     dict_rows = csv.DictReader(report, delimiter='|')
-    pattern = re.compile(r'^(http|https|ftp)://(aix.software.ibm.com|public.dhe.ibm.com)/(aix/ifixes/.*?/|aix/efixes/security/.*?.tar)$')
+    pattern = re.compile(r'^(http|https|ftp)://(aix.software.ibm.com|public.dhe.ibm.com)'
+                         r'/(aix/ifixes/.*?/|aix/efixes/security/.*?.tar)$')
     rows = [row['Download URL'] for row in dict_rows]
     rows = [row for row in rows if pattern.match(row) is not None]
     rows = list(set(rows))  # remove duplicates
@@ -404,7 +423,7 @@ def run_downloader(machine, output, urls, force):
             for epkg in epkgs:
                 try:
                     tar.extract(epkg, tar_dir)
-                except Exception as exc:
+                except (OSError, IOError, tarfile.TarError) as exc:
                     logging.warn('EXCEPTION {}'.format(exc))
                     increase_fs(tar_dir)
                     tar.extract(epkg, tar_dir)
@@ -419,6 +438,7 @@ def run_downloader(machine, output, urls, force):
             # URL as a Directory
             ################################
             logging.debug('{}: treat url as a directory'.format(machine))
+            # pylint: disable=protected-access
             response = urllib.urlopen(url, context=ssl._create_unverified_context())
 
             # find all epkg in html body
@@ -429,7 +449,8 @@ def run_downloader(machine, output, urls, force):
 
             # download epkg
             epkgs = [os.path.abspath(os.path.join(WORKDIR, epkg)) for epkg in epkgs
-                     if download(os.path.join(url, epkg), os.path.abspath(os.path.join(WORKDIR, epkg)))]
+                     if download(os.path.join(url, epkg),
+                                 os.path.abspath(os.path.join(WORKDIR, epkg)))]
             out['3.download'].extend(epkgs)
 
             # check prerequisite
@@ -462,12 +483,12 @@ def run_installer(machine, output, epkgs, force):
         for epkg in epkgs:
             try:
                 shutil.copy(epkg, destpath)
-            except Exception as exc:
+            except (IOError, shutil.Error) as exc:
                 logging.warn('EXCEPTION {}'.format(exc))
                 increase_fs(destpath)
                 shutil.copy(epkg, destpath)
         epkgs_base = [os.path.basename(epkg) for epkg in epkgs]
-        epkgs_base.sort(reverse = True)
+        epkgs_base.sort(reverse=True)
 
         efixes = ' '.join(epkgs_base)
         lpp_source = machine + '_lpp_source'
@@ -674,10 +695,10 @@ if __name__ == '__main__':
 
     TARGETS = expand_targets(re.split(r'[,\s]', MODULE.params['targets']), NIM_CLIENTS)
     FLRTVC_PARAMS = {'apar_type': MODULE.params['apar'],
-                     'apar_csv':  MODULE.params['csv'],
-                     'filesets':  MODULE.params['filesets'],
-                     'dst_path':  MODULE.params['path'],
-                     'verbose':   MODULE.params['verbose']}
+                     'apar_csv': MODULE.params['csv'],
+                     'filesets': MODULE.params['filesets'],
+                     'dst_path': MODULE.params['path'],
+                     'verbose': MODULE.params['verbose']}
     FORCE = MODULE.params['force']
     # TBC - Temporary - invalidate the force option
     FORCE = False
@@ -686,7 +707,7 @@ if __name__ == '__main__':
     CHECK_ONLY = MODULE.params['check_only']
     DOWNLOAD_ONLY = MODULE.params['download_only']
 
-    if (FLRTVC_PARAMS['dst_path'] is None) or (not FLRTVC_PARAMS['dst_path'].strip()) :
+    if (FLRTVC_PARAMS['dst_path'] is None) or (not FLRTVC_PARAMS['dst_path'].strip()):
         FLRTVC_PARAMS['dst_path'] = '/tmp/ansible'
     WORKDIR = os.path.join(FLRTVC_PARAMS['dst_path'], 'work')
 
@@ -702,15 +723,15 @@ if __name__ == '__main__':
     # Install flrtvc script
     # ===========================================
     logging.debug('*** INSTALL ***')
-    flrtvcpath = os.path.abspath(os.path.join(os.sep, 'usr', 'bin'))
-    flrtvcfile = os.path.join(flrtvcpath, 'flrtvc.ksh')
-    if not os.path.exists(flrtvcfile):
-        destname = os.path.abspath(os.path.join(os.sep, 'FLRTVC-latest.zip'))
-        download('https://www-304.ibm.com/webapp/set2/sas/f/flrt3/FLRTVC-latest.zip', destname)
-        unzip(destname, os.path.abspath(os.path.join(os.sep, 'usr', 'bin')))
-    st = os.stat(flrtvcfile)
-    if not st.st_mode & stat.S_IEXEC:
-        os.chmod(flrtvcfile, st.st_mode | stat.S_IEXEC)
+    _FLRTVCPATH = os.path.abspath(os.path.join(os.sep, 'usr', 'bin'))
+    _FLRTVCFILE = os.path.join(_FLRTVCPATH, 'flrtvc.ksh')
+    if not os.path.exists(_FLRTVCFILE):
+        _DESTNAME = os.path.abspath(os.path.join(os.sep, 'FLRTVC-latest.zip'))
+        download('https://www-304.ibm.com/webapp/set2/sas/f/flrt3/FLRTVC-latest.zip', _DESTNAME)
+        unzip(_DESTNAME, os.path.abspath(os.path.join(os.sep, 'usr', 'bin')))
+    _STAT = os.stat(_FLRTVCFILE)
+    if not _STAT.st_mode & stat.S_IEXEC:
+        os.chmod(_FLRTVCFILE, _STAT.st_mode | stat.S_IEXEC)
 
     # ===========================================
     # Run flrtvc script
@@ -750,4 +771,7 @@ if __name__ == '__main__':
         run_installer(MACHINE, OUTPUT[MACHINE], OUTPUT[MACHINE]['4.check'], FORCE)
     wait_all()
 
-    MODULE.exit_json(changed=CHANGED, msg='exit successfully', meta=OUTPUT)
+    MODULE.exit_json(
+        changed=CHANGED,
+        msg='FLRTVC completed successfully',
+        meta=OUTPUT)
