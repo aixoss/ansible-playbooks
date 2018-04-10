@@ -49,6 +49,9 @@ def run_oslevel_cmd(machine, result):
         machine (str): The name machine
         result  (dict): The result of the command
     """
+
+    result[machine] = "timedout"
+
     if machine == 'master':
         cmd = ['/usr/bin/oslevel', '-s']
 
@@ -56,11 +59,22 @@ def run_oslevel_cmd(machine, result):
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
                '/usr/bin/oslevel -s']
 
-    proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
+    try:
+        proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+        (std_out, std_err) = proc.communicate()
 
-    # return stdout only ... stripped!
-    result[machine] = proc.communicate()[0].rstrip()
+        logging.debug('{} oslevel stdout: "{}"'.format(machine, std_out))
+        if std_err.rstrip():
+            logging.warning('"{}" command stderr: {}'.format(' '.join(cmd), std_err))
+
+        # return stdout only ... stripped!
+        result[machine] = std_out.rstrip()
+
+    except Exception as excep:
+        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
+              .format(cmd, excep.args, std_out, std_err)
+        logging.error('Failed to get oslevel for {}: {}'.format(machine, msg))
 
 
 # ----------------------------------------------------------------
@@ -145,7 +159,6 @@ def get_nim_clients_info(module, lpar_type):
             info_hash[obj_key]['mgmt_cec_serial'] = ''
             info_hash[obj_key]['oslevel'] = ''
             continue
-        match_cstate = re.match(r"^\s+Cstate\s+=\s+(.*)$", line)
 
         match_cstate = re.match(r"^\s+Cstate\s+=\s+(.*)$", line)
         if match_cstate:
@@ -226,7 +239,9 @@ def get_nim_clients_oslevel(type):
         threads.append(process)
 
     for process in threads:
-        process.join()
+        process.join(300)  # wait 5 min for c_rsh to timeout
+        if process.is_alive():
+            logging.warning('{} Not responding'.format(process))
 
     return clients_oslevel
 
@@ -335,13 +350,13 @@ def build_nim_node(module):
 
     for (k, val) in clients_oslevel.items():
         NIM_NODE['standalone'][k]['oslevel'] = val
-    logging.debug('NIM Clients: {}'.format(clients_oslevel))
+    logging.debug('NIM Clients oslevel: {}'.format(clients_oslevel))
 
     clients_oslevel = get_nim_clients_oslevel('vios')
 
     for (k, val) in clients_oslevel.items():
         NIM_NODE['vios'][k]['oslevel'] = val
-    logging.debug('NIM Clients: {}'.format(clients_oslevel))
+    logging.debug('NIM VIOS Clients oslevel: {}'.format(clients_oslevel))
 
     # =========================================================================
     # Build master info list

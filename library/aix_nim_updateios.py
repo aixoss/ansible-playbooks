@@ -675,7 +675,7 @@ if __name__ == '__main__':
             installp_bundle=dict(required=False, type='str'),
             lpp_source=dict(required=False, type='str'),
             accept_licenses=dict(required=False, type='str'),
-            action=dict(choices=['install'],
+            action=dict(choices=['install', 'commit', 'reject', 'cleanup', 'remove'],
                         required=True, type='str'),
             preview=dict(required=False, type='str'),
             time_limit=dict(required=False, type='str'),
