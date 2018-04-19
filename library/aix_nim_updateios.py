@@ -37,7 +37,7 @@ short_description: Perform a VIO update
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
+def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
     """
     Execute the given command
         - cmd           array of the command parameters
@@ -61,7 +61,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
     if debug_data is True:
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=shell)
 
     except subprocess.CalledProcessError as exc:
         # exception for ret_code != 0 can be cached if exit_on_error is set
@@ -73,9 +73,9 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
             module.fail_json(msg=msg)
 
     except OSError as exc:
-        # uncatched exception
-        msg = 'Command: {} Exception.Args{}'\
-              .format(cmd, exc.args)
+        # generic exception
+        msg = 'Command: {} Exception: {} Exception.Args{}'\
+              .format(cmd, exc, exc.args)
         module.fail_json(msg=msg)
 
     if ret_code == 0:
@@ -319,7 +319,8 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
         for line in std_out.split('\n'):
             line = line.rstrip()
             match_key = re.match(r"^Cluster does not exist.$", line)
-            if match_key:
+            usage_key = re.match(r"^Usage: cluster\s.*", line)
+            if match_key or usage_key:
                 logging.debug('There is no cluster or the node {} is DOWN'
                               .format(vios))
                 NIM_NODE['nim_vios'][vios]['vios_ssp_status'] = 'DOWN'
@@ -343,7 +344,7 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
                     if tuple_len == 1:
                         if cur_vios_ssp_status == 'OK':
                             err_msg = 'SSP is active for the single VIOS: {}.'\
-                                      'VIOS cannot be updated'\
+                                      ' VIOS cannot be updated'\
                                       .format(cur_vios_name)
                             OUTPUT.append('{}'.format(err_msg))
                             logging.error('{}'.format(err_msg))
@@ -471,7 +472,7 @@ def get_updateios_cmd(module):
             cmd += ['-a', 'installp_bundle=%s' % (module.params['installp_bundle'])]
         else:
             msg = '"filesets" parameter or "installp_bundle" parameter'\
-                  'is mandatory with the "remove" action'
+                  ' is mandatory with the "remove" action'
             logging.error('{}'.format(msg))
             OUTPUT.append('{}'.format(msg))
             module.fail_json(msg=msg)
@@ -572,7 +573,35 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
         update_op_tab[vios_key] = "SUCCESS-UPDT"
 
         for vios in target_tuple:
-            OUTPUT.append('    Updating VIOS: {}'.format(vios))
+            # Commit applied lpps if necessay
+            if module.params['preview'] and module.params['preview'] == 'no':
+                OUTPUT.append('    Commit all applied lpps before the update on {}'
+                              .format(vios))
+                logging.info('Commit all applied lpps before the update on {}'
+                             .format(vios))
+
+                cmd_commit = 'LANG=C; /usr/sbin/nim -o updateios '\
+                             '-a updateios_flags=-commit -a filesets=all {} 2>&1'\
+                             .format(vios)
+                logging.debug('NIM - Command:{}'.format(cmd_commit))
+
+                (ret, std_out) = exec_cmd(cmd_commit, module, shell=True)
+
+                if ret != 0:
+                    if std_out.find('There are no uncommitted updates') == -1:
+                        logging.warn('Failed {} {}'.format(cmd_commit, std_out))
+                        msg = 'Failed to commit all applied lpps before the update on {}'\
+                              .format(vios)
+                        OUTPUT.append("{}".format(msg))
+                    else:
+                        OUTPUT.append('Nothing to commit on {}'.format(vios))
+                else:
+                    logging.debug('All applied updates are now committed: {}'
+                                  .format(std_out))
+                    OUTPUT.append('All applied updates are now committed')
+                    CHANGED = True
+
+                OUTPUT.append('    Updating VIOS: {}'.format(vios))
 
             # set the error label to be used in sub routines
             err_label = "FAILURE-UPDT1"
@@ -732,9 +761,9 @@ if __name__ == '__main__':
         if targets_update_status:
             OUTPUT.append('NIM updateios operation status:')
             logging.info('NIM updateios operation status:')
-            for vios_key, status in targets_update_status:
-                OUTPUT.append("    {} : {}".format(vios_key, status))
-                logging.info('    {} : {}'.format(vios_key, status))
+            for vios_key in targets_update_status:
+                OUTPUT.append("    {} : {}".format(vios_key, targets_update_status[vios_key]))
+                logging.info('    {} : {}'.format(vios_key, targets_update_status[vios_key]))
             logging.info('NIM updateios operation result: {}'.format(targets_update_status))
         else:
             logging.error('NIM updateios operation: status table is empty')
