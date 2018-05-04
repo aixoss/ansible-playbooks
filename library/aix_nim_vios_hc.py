@@ -172,7 +172,6 @@ def get_nim_cecs_info(module):
     return info_hash
 
 
-
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
 def get_nim_clients_info(module, lpar_type):
@@ -357,7 +356,7 @@ def vios_health(module, mgmt_sys_uuid, hmc_ip, vios_uuids):
             vstr += "v"
             verbose += 1
         cmd.extend([vstr])
-        
+
     if VERBOSITY >= 3:
         cmd.extend(['-D'])
 
