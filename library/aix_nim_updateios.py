@@ -106,7 +106,7 @@ def get_nim_clients_info(module, lpar_type):
     cmd = ['lsnim', '-t', lpar_type, '-l']
     (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
-        logging.error('Error: Cannot list NIM {} objects'.format(lpar_type))
+        logging.error('Cannot list NIM {} objects'.format(lpar_type))
         module.fail_json(msg="Error: Cannot list NIM {} objects".format(lpar_type))
 
     # lpar name and associated Cstate
@@ -139,6 +139,7 @@ def get_nim_clients_info(module, lpar_type):
                                     format(obj_key, match_mgmtprof.group(1)))
                 continue
 
+            # Get VIOS interface info in case we need c_rsh
             match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line)
             if match_if:
                 info_hash[obj_key]['vios_ip'] = match_if.group(1)
@@ -188,7 +189,7 @@ def check_lpp_source(module, lpp_source):
     cmd = ['lsnim', '-a', 'location', lpp_source]
     (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
-        logging.error('NIM - Error: cannot find location of lpp_source {}'.format(lpp_source))
+        logging.error('Cannot find location of lpp_source {}'.format(lpp_source))
         module.fail_json(msg="NIM - Error: cannot find location of lpp_source {}"
                          .format(lpp_source))
     location = std_out.split()[3]
@@ -197,7 +198,7 @@ def check_lpp_source(module, lpp_source):
     cmd = ['/bin/find/', location]
     (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
-        logging.error('NIM - Error: cannot find location of lpp_source {}'
+        logging.error('Cannot find location of lpp_source {}'
                       .format(lpp_source))
         module.fail_json(msg="NIM - Error: cannot find location of lpp_source {}"
                          .format(lpp_source))
@@ -251,8 +252,17 @@ def check_vios_targets(targets):
             return None
 
         # check vios is knowed by the NIM master - if not ignore it
-        if tuple_elts[0] not in NIM_NODE['nim_vios'] \
-           or (tuple_len == 2 and tuple_elts[1] not in NIM_NODE['nim_vios']):
+        if tuple_elts[0] not in module.nim_node['nim_vios']:
+            msg = "VIOS {} is not client of the NIM master, will be ignored"
+                  .format(tuple_elts[0])
+            OUTPUT.append(msg)
+            logging.warn(msg)
+            continue
+        if tuple_len == 2 and tuple_elts[1] not in module.nim_node['nim_vios']:
+            msg = "VIOS {} is not client of the NIM master, will be ignored"
+                  .format(tuple_elts[1])
+            OUTPUT.append(msg)
+            logging.warn(msg)
             continue
 
         if tuple_len == 2:

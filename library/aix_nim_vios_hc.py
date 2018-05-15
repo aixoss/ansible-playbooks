@@ -141,6 +141,39 @@ def get_hmc_info(module):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
+def get_nim_cecs_info(module):
+    """
+    Get the list of the cec defined on the nim master and gat their serial number.
+
+    return the list of the name of the cec objects defined on the
+           nim master and their associated CEC serial number value
+    """
+    std_out = ''
+    info_hash = {}
+
+    cmd = ['lsnim', '-t', 'cec', '-l']
+    (ret, std_out) = exec_cmd(cmd, module)
+
+    # lpar name and associated Cstate
+    obj_key = ""
+    for line in std_out.split('\n'):
+        line = line.rstrip()
+        match_key = re.match(r"^(\S+):", line)
+        if match_key:
+            obj_key = match_key.group(1)
+            info_hash[obj_key] = {}
+            continue
+
+        match_serial = re.match(r"^\s+serial\s+=\s+(.*)$", line)
+        if match_serial:
+            info_hash[obj_key]['serial'] = match_serial.group(1)
+            continue
+
+    return info_hash
+
+
+# ----------------------------------------------------------------
+# ----------------------------------------------------------------
 def get_nim_clients_info(module, lpar_type):
     """
     Get the list of the lpar (standalones or vios) defined on the nim master, and get their
@@ -167,8 +200,7 @@ def get_nim_clients_info(module, lpar_type):
 
         match_cstate = re.match(r"^\s+Cstate\s+=\s+(.*)$", line)
         if match_cstate:
-            cstate = match_cstate.group(1)
-            info_hash[obj_key]['cstate'] = cstate
+            info_hash[obj_key]['cstate'] = match_cstate.group(1)
             continue
 
         # For VIOS store the management profile
@@ -179,7 +211,7 @@ def get_nim_clients_info(module, lpar_type):
                 if len(mgmt_elts) == 3:
                     info_hash[obj_key]['mgmt_hmc_id'] = mgmt_elts[0]
                     info_hash[obj_key]['mgmt_vios_id'] = mgmt_elts[1]
-                    info_hash[obj_key]['mgmt_cec_serial'] = mgmt_elts[2]
+                    info_hash[obj_key]['mgmt_cec'] = mgmt_elts[2]
 
             match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line)
             if match_if:
@@ -213,10 +245,23 @@ def build_nim_node(module):
     logging.debug('NIM HMC: {}'.format(nim_hmc))
 
     # =========================================================================
+    # Build CEC list
+    # =========================================================================
+    nim_cec = {}
+    nim_cec = get_nim_cecs_info(module)
+
+    # =========================================================================
     # Build vios info list
     # =========================================================================
     nim_vios = {}
     nim_vios = get_nim_clients_info(module, 'vios')
+
+    # =========================================================================
+    # Complete the CEC serial in nim_vios dict
+    # =========================================================================
+    for key in nim_vios:
+        if nim_vios[key]['mgmt_cec'] in nim_cec:
+            nim_vios[key]['mgmt_cec_serial'] = nim_cec[nim_vios[key]['mgmt_cec']]['serial']
 
     NIM_NODE['nim_vios'] = nim_vios
     logging.debug('NIM VIOS: {}'.format(nim_vios))
@@ -304,6 +349,16 @@ def vios_health(module, mgmt_sys_uuid, hmc_ip, vios_uuids):
     cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-m', mgmt_sys_uuid]
     for vios in vios_uuids:
         cmd.extend(['-U', vios])
+    if VERBOSITY != 0:
+        vstr = "-v"
+        verbose = 1
+        while verbose < VERBOSITY:
+            vstr += "v"
+            verbose += 1
+        cmd.extend([vstr])
+
+    if VERBOSITY >= 3:
+        cmd.extend(['-D'])
 
     (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
@@ -348,6 +403,15 @@ def vios_health_init(module, hmc_id, hmc_ip):
     # if needed, call the /usr/sbin/vioshc.py script a first time to
     # collect UUIDs
     cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-l', 'a']
+    if VERBOSITY != 0:
+        vstr = "-v"
+        verbose = 1
+        while verbose < VERBOSITY:
+            vstr += "v"
+            verbose += 1
+        cmd.extend([vstr])
+    if VERBOSITY >= 3:
+        cmd.extend(['-D'])
 
     (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
@@ -381,7 +445,7 @@ def vios_health_init(module, hmc_id, hmc_ip):
             match_key = re.match(r"^(\S+)\s+(\S+)$", line)
             if match_key:
                 cec_uuid = match_key.group(1)
-                cec_serial = match_key.group(2).replace("*", "_")
+                cec_serial = match_key.group(2)
 
                 logging.debug('New managed system section:{},{}'
                               .format(cec_uuid, cec_serial))
@@ -415,7 +479,7 @@ def vios_health_init(module, hmc_id, hmc_ip):
             continue
 
         # skip vios line where lparid is not found.
-        match_key = re.match(r"^\s+(\S+)\s+Not found$", line)
+        match_key = re.match(r"^\s+(\S+)\s+none$", line)
         if match_key:
             continue
 
@@ -539,6 +603,7 @@ if __name__ == '__main__':
     CHANGED = False
     targets_list = []
     VARS = {}
+    VERBOSITY = 0
 
     module = AnsibleModule(
         argument_spec=dict(
@@ -555,6 +620,7 @@ if __name__ == '__main__':
     # =========================================================================
     action = module.params['action']
     targets = module.params['targets']
+    VERBOSITY = module._verbosity
 
     if module.params['description']:
         description = module.params['description']
@@ -581,6 +647,7 @@ if __name__ == '__main__':
 
     OUTPUT.append('VIOS Health Check operation for {}'.format(targets))
     logging.info('action {} for {} targets'.format(action, targets))
+    logging.info('VERBOSITY is set to {}'.format(VERBOSITY))
 
     targets_health_status = {}
 
