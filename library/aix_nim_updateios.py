@@ -29,9 +29,9 @@ from ansible.module_utils.basic import *
 
 DOCUMENTATION = """
 ---
-module: update_ios
-authors: Cynthia Wu, Marco Lugo, Patrice Jacquin
-short_description: Perform a VIO update
+module: nim_updateios
+authors: Alain Poncet, Patrice Jacquin, Vianney Robin
+short_description: Perform a VIO update with NIM
 """
 
 
@@ -127,17 +127,18 @@ def get_nim_clients_info(module, lpar_type):
 
         # For VIOS store the management profile
         if lpar_type == 'vios':
-            match_mgmtprof = re.match(r"^\s+mgmt_profile1\s+=\s+(.*)$", line)
-            if match_mgmtprof:
-                mgmt_elts = match_mgmtprof.group(1).split()
-                if len(mgmt_elts) == 3:
-                    info_hash[obj_key]['mgmt_hmc_id'] = mgmt_elts[0]
-                    info_hash[obj_key]['mgmt_vios_id'] = mgmt_elts[1]
-                    info_hash[obj_key]['mgmt_cec_serial'] = mgmt_elts[2]
-                else:
-                    logging.warning('WARNING: VIOS {} management profile has not 3 elements: {}'.
-                                    format(obj_key, match_mgmtprof.group(1)))
-                continue
+            # Not used in this module so far
+            # match_mgmtprof = re.match(r"^\s+mgmt_profile1\s+=\s+(.*)$", line)
+            # if match_mgmtprof:
+            #     mgmt_elts = match_mgmtprof.group(1).split()
+            #     if len(mgmt_elts) == 3:
+            #         info_hash[obj_key]['mgmt_hmc_id'] = mgmt_elts[0]
+            #         info_hash[obj_key]['mgmt_vios_id'] = mgmt_elts[1]
+            #         info_hash[obj_key]['mgmt_cec_serial'] = mgmt_elts[2]
+            #     else:
+            #         logging.warning('WARNING: VIOS {} management profile has not 3 elements: {}'.
+            #                         format(obj_key, match_mgmtprof.group(1)))
+            #     continue
 
             # Get VIOS interface info in case we need c_rsh
             match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line)
@@ -208,7 +209,7 @@ def check_lpp_source(module, lpp_source):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def check_vios_targets(targets):
+def check_vios_targets(module, targets):
     """
     check the list of the vios targets.
 
@@ -216,6 +217,7 @@ def check_vios_targets(targets):
         (vios1, vios2) (vios3)
 
     arguments:
+        module (hash): the Ansible module
         targets (str): list of tuple of NIM name of vios machine
 
     return: the list of the existing vios tuple matching the target list
@@ -253,13 +255,13 @@ def check_vios_targets(targets):
 
         # check vios is knowed by the NIM master - if not ignore it
         if tuple_elts[0] not in module.nim_node['nim_vios']:
-            msg = "VIOS {} is not client of the NIM master, will be ignored"
+            msg = "VIOS {} is not client of the NIM master, will be ignored"\
                   .format(tuple_elts[0])
             OUTPUT.append(msg)
             logging.warn(msg)
             continue
         if tuple_len == 2 and tuple_elts[1] not in module.nim_node['nim_vios']:
-            msg = "VIOS {} is not client of the NIM master, will be ignored"
+            msg = "VIOS {} is not client of the NIM master, will be ignored"\
                   .format(tuple_elts[1])
             OUTPUT.append(msg)
             logging.warn(msg)
@@ -506,7 +508,7 @@ def get_updateios_cmd(module):
 def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
     """
     Execute the updateios command
-        - module        the module variable
+        - module        the Ansible module
     return
         - ret           return code of nim updateios command
     """
@@ -753,7 +755,7 @@ if __name__ == '__main__':
     # =========================================================================
     # Perfom checks
     # =========================================================================
-    ret = check_vios_targets(targets)
+    ret = check_vios_targets(MODULE, targets)
     if (not ret) or (ret is None):
         OUTPUT.append('Empty target list')
         logging.warn('Warning: Empty target list: "{}"'.format(targets))
