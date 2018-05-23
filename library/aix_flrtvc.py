@@ -31,12 +31,12 @@ import zipfile
 import stat
 # Ansible module 'boilerplate'
 # pylint: disable=wildcard-import,unused-wildcard-import
-from ansible.module_utils.basic import *
+from ansible.module_utils.basic import AnsibleModule
 
 DOCUMENTATION = """
 ------
 module: aix_flrtvc
-author: "Jerome Hurstel"
+author: "Jerome Hurstel, Alain Poncet, Vianney Robin"
 version_added: "1.0.0"
 requirements: [ AIX ]
 """
@@ -114,8 +114,8 @@ def download(src, dst):
             cmd = ['/bin/wget', '--no-check-certificate', src, '-P', os.path.dirname(dst)]
             subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
-            logging.warn('EXCEPTION cmd={} rc={} output={}'
-                         .format(exc.cmd, exc.returncode, exc.output))
+            logging.warning('EXCEPTION cmd={} rc={} output={}'
+                            .format(exc.cmd, exc.returncode, exc.output))
             res = False
             if exc.returncode == 3:
                 increase_fs(dst)
@@ -137,7 +137,7 @@ def unzip(src, dst):
         zfile = zipfile.ZipFile(src)
         zfile.extractall(dst)
     except (zipfile.BadZipfile, zipfile.LargeZipFile, RuntimeError) as exc:
-        logging.warn('EXCEPTION {}'.format(exc))
+        logging.warning('EXCEPTION {}'.format(exc))
         increase_fs(dst)
         unzip(src, dst)
 
@@ -155,8 +155,8 @@ def locked_fileset(machine, fileset):
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
         logging.debug('{}: command result is {}'.format(machine, stdout))
     except subprocess.CalledProcessError as exc:
-        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        logging.warning('{}: EXCEPTION cmd={} rc={} output={}'
+                        .format(machine, exc.cmd, exc.returncode, exc.output))
         stdout = exc.output
 
 
@@ -174,8 +174,8 @@ def remove_efix(machine, label):
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
         logging.debug('{}: command result is {}'.format(machine, stdout))
     except subprocess.CalledProcessError as exc:
-        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        logging.warning('{}: EXCEPTION cmd={} rc={} output={}'
+                        .format(machine, exc.cmd, exc.returncode, exc.output))
         stdout = exc.output
 
 
@@ -195,8 +195,8 @@ def check_prereq(epkg, ref, machine, force):
         cmd = '/usr/sbin/emgr -dXv3 -e {} | /bin/grep -p \\\"PREREQ'.format(epkg)
         stdout = subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as exc:
-        logging.warn('EXCEPTION cmd={} rc={} output={}'
-                     .format(exc.cmd, exc.returncode, exc.output))
+        logging.warning('EXCEPTION cmd={} rc={} output={}'
+                        .format(exc.cmd, exc.returncode, exc.output))
 
     res = True
     # For each prerequisites, ...
@@ -207,7 +207,7 @@ def check_prereq(epkg, ref, machine, force):
         if line and not line.startswith('#'):
 
             # ... match prerequisite ...
-            match = re.match(r'^(.*?)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+)$', line)
+            match = re.match(r'^(.*?)\s+(\d+\.\d+\.\d+\.\d+)\s+(\d+\.\d+\.\d+\.\d+).*?$', line)
             if match is not None:
                 (fileset, minlvl, maxlvl) = match.groups()
                 minlvl_i = list(map(int, minlvl.split(".")))
@@ -260,8 +260,8 @@ def run_lslpp(machine, filename):
         with open(filename, 'w') as myfile:
             myfile.write(stdout)
     except subprocess.CalledProcessError as exc:
-        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        logging.error('{}: EXCEPTION cmd={} rc={} output={}'
+                      .format(machine, exc.cmd, exc.returncode, exc.output))
 
 
 @logged
@@ -281,8 +281,8 @@ def run_emgr(machine, filename):
         with open(filename, 'w') as myfile:
             myfile.write(stdout)
     except subprocess.CalledProcessError as exc:
-        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        logging.error('{}: EXCEPTION cmd={} rc={} output={}'
+                      .format(machine, exc.cmd, exc.returncode, exc.output))
 
 
 # @start_threaded(THRDS)
@@ -300,17 +300,30 @@ def run_flrtvc(machine, output, params):
 
     # Run 'lslpp -Lcq' on the remote machine and save to file
     lslpp_file = os.path.join(WORKDIR, 'lslpp_{}.txt'.format(machine))
+    if os.path.exists(lslpp_file):
+        os.remove(lslpp_file)
     thd1 = threading.Thread(target=run_lslpp, args=(machine, lslpp_file))
     thd1.start()
 
     # Run 'emgr -lv3' on the remote machine and save to file
     emgr_file = os.path.join(WORKDIR, 'emgr_{}.txt'.format(machine))
+    if os.path.exists(emgr_file):
+        os.remove(emgr_file)
     thd2 = threading.Thread(target=run_emgr, args=(machine, emgr_file))
     thd2.start()
 
     # Wait threads to finish
     thd1.join()
     thd2.join()
+
+    if not os.path.exists(lslpp_file) or not os.path.exists(emgr_file):
+        if not os.path.exists(lslpp_file):
+            output.update({'0.report': 'Failed to list filsets (lslpp) on {}, {} does not exist.'
+                                       .format(machine, lslpp_file)})
+        if not os.path.exists(emgr_file):
+            output.update({'0.report': 'Failed to list fixes (emgr) on {}, {} does not exist.'
+                                       .format(machine, emgr_file)})
+        return 1
 
     try:
         # Prepare flrtvc command
@@ -339,10 +352,11 @@ def run_flrtvc(machine, output, params):
                 else:
                     myfile.write(stdout_c)
     except subprocess.CalledProcessError as exc:
-        logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                     .format(machine, exc.cmd, exc.returncode, exc.output))
+        logging.warning('{}: EXCEPTION cmd={} rc={} output={}'
+                        .format(machine, exc.cmd, exc.returncode, exc.output))
         output.update({'0.report': []})
         MODULE.exit_json(changed=CHANGED, msg='error executing flrtvc', meta=output)
+    return 0
 
 
 # @start_threaded(THRDS)
@@ -424,7 +438,7 @@ def run_downloader(machine, output, urls, force):
                 try:
                     tar.extract(epkg, tar_dir)
                 except (OSError, IOError, tarfile.TarError) as exc:
-                    logging.warn('EXCEPTION {}'.format(exc))
+                    logging.warning('EXCEPTION {}'.format(exc))
                     increase_fs(tar_dir)
                     tar.extract(epkg, tar_dir)
             epkgs = [os.path.abspath(os.path.join(tar_dir, epkg)) for epkg in epkgs]
@@ -484,7 +498,7 @@ def run_installer(machine, output, epkgs, force):
             try:
                 shutil.copy(epkg, destpath)
             except (IOError, shutil.Error) as exc:
-                logging.warn('EXCEPTION {}'.format(exc))
+                logging.warning('EXCEPTION {}'.format(exc))
                 increase_fs(destpath)
                 shutil.copy(epkg, destpath)
         epkgs_base = [os.path.basename(epkg) for epkg in epkgs]
@@ -500,8 +514,8 @@ def run_installer(machine, output, epkgs, force):
                 cmd += ' -a location={} -a packages=all {}'.format(destpath, lpp_source)
                 subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as exc:
-                logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                             .format(machine, exc.cmd, exc.returncode, exc.output))
+                logging.warning('{}: EXCEPTION cmd={} rc={} output={}'
+                                .format(machine, exc.cmd, exc.returncode, exc.output))
 
         # perform customization
         stdout = ''
@@ -521,8 +535,8 @@ def run_installer(machine, output, epkgs, force):
             logging.debug('{}: customization result is {}'.format(machine, stdout))
             CHANGED = True
         except subprocess.CalledProcessError as exc:
-            logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                         .format(machine, exc.cmd, exc.returncode, exc.output))
+            logging.warning('{}: EXCEPTION cmd={} rc={} output={}'
+                            .format(machine, exc.cmd, exc.returncode, exc.output))
             stdout = exc.output
         output.update({'5.install': stdout.splitlines()})
 
@@ -532,8 +546,8 @@ def run_installer(machine, output, epkgs, force):
                 cmd = '/usr/sbin/nim -o remove {}'.format(lpp_source)
                 subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
             except subprocess.CalledProcessError as exc:
-                logging.warn('{}: EXCEPTION cmd={} rc={} output={}'
-                             .format(machine, exc.cmd, exc.returncode, exc.output))
+                logging.warning('{}: EXCEPTION cmd={} rc={} output={}'
+                                .format(machine, exc.cmd, exc.returncode, exc.output))
 
 
 @wait_threaded(THRDS)
@@ -544,26 +558,46 @@ def wait_all():
     pass
 
 
+def parse_nim_info(output):
+    """
+    Build client nim info dictionary from output of lsnim command.
+    """
+    obj_key = ''
+
+
 def client_list():
     """
     Build client list (standalone and vios)
     """
     stdout = ''
+    info = {}
     try:
-        cmd = ['lsnim', '-t', 'standalone']
+        cmd = ['lsnim', '-c', 'machines', '-l']
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-        cmd = ['lsnim', '-t', 'vios']
-        stdout += subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        # cmd = ['lsnim', '-t', 'vios', '-l']
+        # stdout2 = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
+        # stdout = stdout + "\n" + stdout2
     except subprocess.CalledProcessError as exc:
-        logging.warn('EXCEPTION cmd={} rc={} output={}'
-                     .format(exc.cmd, exc.returncode, exc.output))
-    nim_clients = [line.split()[0] for line in stdout.splitlines()]
-    nim_clients.append('master')
-    return nim_clients
+        logging.warning('EXCEPTION cmd={} rc={} output={}'
+                        .format(exc.cmd, exc.returncode, exc.output))
+        return info
+
+    for line in stdout.split('\n'):
+        line = line.rstrip()
+        match_key = re.match(r"^(\S+):", line)
+        if match_key:
+            obj_key = match_key.group(1)
+            info[obj_key] = {}
+            continue
+        rmatch_attr = re.match(r"^\s+(\S+)\s+=\s+(.*)$", line)
+        if rmatch_attr:
+            info[obj_key][rmatch_attr.group(1)] = rmatch_attr.group(2)
+            continue
+    info['master'] = {}
+
+    return info
 
 
-# ----------------------------------------------------------------
-# ----------------------------------------------------------------
 def expand_targets(targets_list, nim_clients):
     """
     Expand the list of the targets.
@@ -636,6 +670,47 @@ def expand_targets(targets_list, nim_clients):
     return list(set(clients))
 
 
+def check_targets(targets_list, nim_clients, output):
+    """
+    Check if each target in the target list can be reached.
+    Build a new target list with reachable target only.
+
+    arguments:
+        targets_list (str): list of existing machines
+        nim_clients (dict): nim info of all clients
+        output      (dict): The result of the command
+
+    """
+    targets = []
+
+    for machine in targets_list:
+        if machine == 'master':
+            targets.append(machine)
+            continue
+
+        if nim_clients[machine]['Cstate'] != 'ready for a NIM operation':
+            logging.warning('Machine: {} is not ready for NIM operation'.format(machine))
+            continue
+
+        try:
+            cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine, '/usr/bin/ls']
+            ret = subprocess.call(args=cmd, stderr=subprocess.STDOUT)
+            if ret == 0:
+                targets.append(machine)
+            else:
+                logging.warning('Cannot reach {} with c_rsh: rc={}'.format(machine, ret))
+                output[machine].update({'0.report': 'Cannot reach {} with c_rsh: rc={}'
+                                                    .format(machine, ret)})
+        except subprocess.CalledProcessError as exc:
+            logging.warning('Cannot reach {} with c_rsh: rc={} output={}'
+                            .format(machine, exc.returncode, exc.output))
+            output[machine].update({'0.report': 'Cannot reach {}, {} failed: {}'
+                                                .format(machine, exc.cmd, exc.output)})
+            continue
+
+    return list(set(targets))
+
+
 def increase_fs(dest):
     """
     Increase filesystem by 100Mb
@@ -648,8 +723,8 @@ def increase_fs(dest):
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
         logging.debug('{}: {}'.format(mount_point, stdout))
     except subprocess.CalledProcessError as exc:
-        logging.warn('EXCEPTION cmd={} rc={} output={}'
-                     .format(exc.cmd, exc.returncode, exc.output))
+        logging.warning('EXCEPTION cmd={} rc={} output={}'
+                        .format(exc.cmd, exc.returncode, exc.output))
 
 
 ###################################################################################################
@@ -686,14 +761,15 @@ if __name__ == '__main__':
     # ===========================================
     logging.debug('*** OHAI ***')
     NIM_CLIENTS = client_list()
-    logging.debug(NIM_CLIENTS)
+    logging.debug('Nim clients are: {}'.format(NIM_CLIENTS))
 
     # ===========================================
     # Get module params
     # ===========================================
     logging.debug('*** INIT ***')
-
-    TARGETS = expand_targets(re.split(r'[,\s]', MODULE.params['targets']), NIM_CLIENTS)
+    logging.debug('required targets are:{}'.format(MODULE.params['targets']))
+    TARGETS = expand_targets(re.split(r'[,\s]', MODULE.params['targets']), NIM_CLIENTS.keys())
+    logging.debug('Nim client targets are:{}'.format(TARGETS))
     FLRTVC_PARAMS = {'apar_type': MODULE.params['apar'],
                      'apar_csv': MODULE.params['csv'],
                      'filesets': MODULE.params['filesets'],
@@ -719,6 +795,12 @@ if __name__ == '__main__':
     for MACHINE in TARGETS:
         OUTPUT[MACHINE] = {}  # first time init
 
+    # check connecivity
+    TARGETS = check_targets(TARGETS, NIM_CLIENTS, OUTPUT)
+    logging.debug('Available target machines are:{}'.format(TARGETS))
+    if not TARGETS:
+        logging.warning('Empty target list')
+
     # ===========================================
     # Install flrtvc script
     # ===========================================
@@ -737,10 +819,16 @@ if __name__ == '__main__':
     # Run flrtvc script
     # ===========================================
     logging.debug('*** REPORT ***')
+    wrong_targets = []
     for MACHINE in TARGETS:
-        run_flrtvc(MACHINE, OUTPUT[MACHINE], FLRTVC_PARAMS)
+        rc = run_flrtvc(MACHINE, OUTPUT[MACHINE], FLRTVC_PARAMS)
+        if rc == 1:
+            wrong_targets.append(MACHINE)
     wait_all()
-
+    for machine in wrong_targets:
+        logging.warning('Machine: {} will not be updated because of accessibility issue'
+                        .format(machine))
+        TARGETS.remove(machine)
     if CHECK_ONLY:
         MODULE.exit_json(changed=CHANGED, msg='exit on check only', meta=OUTPUT)
 
