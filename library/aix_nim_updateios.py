@@ -24,12 +24,11 @@ import time
 
 # Ansible module 'boilerplate'
 # pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
-from ansible.module_utils.basic import *
-
+from ansible.module_utils.basic import AnsibleModule
 
 DOCUMENTATION = """
 ---
-module: nim_updateios
+module: aix_nim_updateios
 authors: Alain Poncet, Patrice Jacquin, Vianney Robin
 short_description: Perform a VIO update with NIM
 """
@@ -42,10 +41,9 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
     Execute the given command
         - cmd           array of the command parameters
         - module        the module variable
-        - exit_on_error execption is raised if true and cmd return !0
+        - exit_on_error exception is raised if true and cmd return !0
         - debug_data    prints some trace in DEBUG_DATA if set
-
-    In case of error set an error massage and fails the module
+        - shell         execute cmd through the shell if set (security hazard)
 
     return
         - ret_code  (return code of the command)
@@ -68,14 +66,13 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
         output = exc.output
         ret_code = exc.returncode
         if exit_on_error is True:
-            msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'\
-                  .format(cmd, exc.cmd, ret_code, output)
+            msg = 'Command: {} RetCode:{} ... Error:{}'\
+                  .format(exc.cmd, ret_code, output)
             module.fail_json(msg=msg)
 
     except OSError as exc:
         # generic exception
-        msg = 'Command: {} Exception: {} Exception.Args{}'\
-              .format(cmd, exc, exc.args)
+        msg = 'Command: {} Exception: {}'.format(cmd, exc)
         module.fail_json(msg=msg)
 
     if ret_code == 0:
@@ -309,7 +306,7 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
     for vios in target_tuple:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                NIM_NODE['nim_vios'][vios]['vios_ip'],
-               '"/usr/ios/cli/ioscli cluster -status -fmt :"']
+               '"/usr/ios/cli/ioscli cluster -status -fmt : ; echo $?"']
         (ret, std_out) = exec_cmd(cmd, module)
 
         if ret != 0:
@@ -423,12 +420,10 @@ def ssp_stop_start(module, target_tuple, vios, action):
                 node = cur_node
                 break
 
-    clctrl_cmd = '/usr/sbin/clctrl -{} -n {} -m {}'\
-                 .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)
-
     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
            NIM_NODE['nim_vios'][node]['vios_ip'],
-           '"%s"' % (clctrl_cmd)]
+           '"/usr/sbin/clctrl -{} -n {} -m {}; echo $?"'
+           .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)]
     (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
