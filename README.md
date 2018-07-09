@@ -106,7 +106,12 @@ Must be described in yaml format with the following parameters:
      download_only: boolean;
                     if set to "True", performs "check_only" and downloads the fixes
                     (no update of the targets).
-
+     clean:         boolean;
+                    if set to "True", remove the working directory at the end of execution;
+                    (default "False")
+     force:         boolean;
+                    if set to "True", remove currently installed ifix before running flrtvc;
+                    (default "False")
 
 ```
 
