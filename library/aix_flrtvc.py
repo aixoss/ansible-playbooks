@@ -374,12 +374,12 @@ def check_epkgs(epkg_list, lpps, efixes, machine, output):
         # check file locked by efix already installed on the machine
         for file in epkg['files']:
             if file in locked_files:
-                output['messages'].append('installed efix {} is locking {} preventing the '
+                output['messages'].append('installed efix {} locking {} preventing the '
                                           'installation of {}, remove it manually or set the '
                                           '"force" option.'
-                                          .format(' '.join(locked_pkgs[file]), file, epkg['label']))
-                epkg['reject'] = '{}: installed efix {} is locking {}'\
-                                 .format(epkg['label'], ' '.join(locked_pkgs[file]), file)
+                                          .format(' '.join(locked_files[file]), file, epkg['label']))
+                epkg['reject'] = '{}: installed efix {} locking {}'\
+                                 .format(epkg['label'], ' '.join(locked_files[file]), file)
                 logging.info('{}: reject {}'.format(machine, epkg['reject']))
                 epkgs_reject.append(epkg['reject'])
                 continue
@@ -597,6 +597,9 @@ def run_flrtvc(machine, output, params, force):
 
     global WORKDIR
 
+    if force:
+        remove_efix(machine, output)
+
     # Run 'lslpp -Lcq' on the remote machine and save to file
     lslpp_file = os.path.join(WORKDIR, 'lslpp_{}.txt'.format(machine))
     if os.path.exists(lslpp_file):
@@ -623,15 +626,6 @@ def run_flrtvc(machine, output, params, force):
             output.update({'0.report': 'Failed to list fixes (emgr) on {}, {} does not exist'
                                        .format(machine, emgr_file)})
         return 1
-
-    if force:
-        remove_efix(machine, output)
-        # run emgr again as remove changed efix data
-        thd2 = threading.Thread(target=run_emgr,
-                                args=(machine, emgr_file, output))
-        thd2.start()
-        thd2.join()
-        locked_pkgs = {'parse': True}
 
     try:
         # Prepare flrtvc command
