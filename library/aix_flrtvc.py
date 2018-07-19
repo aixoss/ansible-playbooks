@@ -269,11 +269,10 @@ def check_epkgs(epkg_list, lpps, efixes, machine, output):
     # build a dictionary indexed upon file location
     locked_files = {}
     for efix in efixes:
-        for file in efixes[efix]['file']:
-            if efixes[efix]['file'][file]['LOCATION'] not in locked_files:
-                locked_files[efixes[efix]['file'][file]['LOCATION']] = [efix]
-            else:
-                locked_files[efixes[efix]['file'][file]['LOCATION']].append(efix)
+        for file in efixes[efix]['files']:
+            if file not in locked_files:
+                locked_files[file] = efix
+
     logging.debug('{}: locked_files: {}'.format(machine, locked_files))
 
     # Get information on efix we want to install
@@ -374,15 +373,17 @@ def check_epkgs(epkg_list, lpps, efixes, machine, output):
         # check file locked by efix already installed on the machine
         for file in epkg['files']:
             if file in locked_files:
-                output['messages'].append('installed efix {} locking {} preventing the '
+                output['messages'].append('installed efix {} is locking {} preventing the '
                                           'installation of {}, remove it manually or set the '
                                           '"force" option.'
-                                          .format(' '.join(locked_files[file]), file, epkg['label']))
-                epkg['reject'] = '{}: installed efix {} locking {}'\
-                                 .format(epkg['label'], ' '.join(locked_files[file]), file)
+                                          .format(locked_files[file], file, epkg['label']))
+                epkg['reject'] = '{}: installed efix {} is locking {}'\
+                                 .format(epkg['label'], locked_files[file], file)
                 logging.info('{}: reject {}'.format(machine, epkg['reject']))
                 epkgs_reject.append(epkg['reject'])
                 continue
+        if epkg['reject']:
+            continue
 
         # convert packaging date into time in sec from epoch
         if epkg['pkg_date']:
@@ -482,6 +483,9 @@ def parse_emgr(machine, out):
 
     efixes = {}
     emgr_file = os.path.join(WORKDIR, 'emgr_{}.txt'.format(machine))
+    label = ''
+    file = ''
+    package = ''
 
     with open(os.path.abspath(os.path.join(os.sep, emgr_file)), 'r') as myfile:
         for line in myfile:
@@ -494,7 +498,7 @@ def parse_emgr(machine, out):
             if match_key:
                 label = ''
                 file = ''
-                prereq = ''
+                package = ''
                 continue
 
             if not label:
@@ -502,49 +506,24 @@ def parse_emgr(machine, out):
                 if match_key:
                     label = match_key.group(1)
                     efixes[label] = {}
-                    efixes[label]['label'] = label
-                    efixes[label]['file'] = {}
-                    efixes[label]['prereq'] = {}
-                continue
-
-            match_key = re.match(r"^\s*(.+):\s+(.*)$", line)
-            if match_key:
-                if not file and not prereq:
-                    efixes[label][match_key.group(1)] = match_key.group(2)
-                elif prereq:
-                    if prereq not in efixes[label]['prereq']:
-                        logging.error('{}: error parsing {}: prerequisite "{}"'
-                                      .format(machine, emgr_file, prereq))
-                        out['messages'].append('error parsing {}: prerequisite "{}"'
-                                               .format(emgr_file, prereq))
-                        continue
-                    efixes[label]['prereq'][prereq][match_key.group(1)] = match_key.group(2)
-                elif file:
-                    if file not in efixes[label]['file']:
-                        logging.error('{}: error parsing {}: file "{}"'
-                                      .format(machine, emgr_file, file))
-                        out['messages'].append('error parsing {}: file "{}"'
-                                               .format(emgr_file, file))
-                        continue
-                    efixes[label]['file'][file][match_key.group(1)] = match_key.group(2)
+                    efixes[label]['files'] = {}
+                    efixes[label]['packages'] = {}
                 continue
 
             # "   LOCATION:      /usr/sbin/tcpdump" triggers a new file
             match_key = re.match(r"^\s+LOCATION:\s+(\S+)$", line)
             if match_key:
-                prereq = ''
+                package = ''
                 file = match_key.group(1)
-                efixes[label]['file'][file] = {}
-                efixes[label]['file'][file]['LOCATION'] = file
+                efixes[label]['files'][file] = file
                 continue
 
-            # "   FILESET:            bos.mp64" triggers a new prereq
-            match_key = re.match(r"^\s+FILESET:\s+(\S+)$", line)
+            # "   PACKAGE:            bos.net.tcp.client
+            match_key = re.match(r"^\s+PACKAGE:\s+(\S+)$", line)
             if match_key:
                 file = ''
-                prereq = match_key.group(1)
-                efixes[label]['prereq'][prereq] = {}
-                efixes[label]['prereq'][prereq]['FILESET'] = prereq
+                package = match_key.group(1)
+                efixes[label]['packages'][package] = package
                 continue
 
     return efixes
