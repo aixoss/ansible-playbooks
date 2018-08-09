@@ -24,14 +24,13 @@ import time
 
 # Ansible module 'boilerplate'
 # pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
-from ansible.module_utils.basic import *
-
+from ansible.module_utils.basic import AnsibleModule
 
 DOCUMENTATION = """
 ---
-module: update_ios
-authors: Cynthia Wu, Marco Lugo, Patrice Jacquin
-short_description: Perform a VIO update
+module: aix_nim_updateios
+authors: Alain Poncet, Patrice Jacquin, Vianney Robin
+short_description: Perform a VIO update with NIM
 """
 
 
@@ -42,10 +41,9 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
     Execute the given command
         - cmd           array of the command parameters
         - module        the module variable
-        - exit_on_error execption is raised if true and cmd return !0
+        - exit_on_error exception is raised if true and cmd return !0
         - debug_data    prints some trace in DEBUG_DATA if set
-
-    In case of error set an error massage and fails the module
+        - shell         execute cmd through the shell if set (security hazard)
 
     return
         - ret_code  (return code of the command)
@@ -68,14 +66,13 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
         output = exc.output
         ret_code = exc.returncode
         if exit_on_error is True:
-            msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'\
-                  .format(cmd, exc.cmd, ret_code, output)
+            msg = 'Command: {} RetCode:{} ... Error:{}'\
+                  .format(exc.cmd, ret_code, output)
             module.fail_json(msg=msg)
 
     except OSError as exc:
         # generic exception
-        msg = 'Command: {} Exception: {} Exception.Args{}'\
-              .format(cmd, exc, exc.args)
+        msg = 'Command: {} Exception: {}'.format(cmd, exc)
         module.fail_json(msg=msg)
 
     if ret_code == 0:
@@ -127,17 +124,18 @@ def get_nim_clients_info(module, lpar_type):
 
         # For VIOS store the management profile
         if lpar_type == 'vios':
-            match_mgmtprof = re.match(r"^\s+mgmt_profile1\s+=\s+(.*)$", line)
-            if match_mgmtprof:
-                mgmt_elts = match_mgmtprof.group(1).split()
-                if len(mgmt_elts) == 3:
-                    info_hash[obj_key]['mgmt_hmc_id'] = mgmt_elts[0]
-                    info_hash[obj_key]['mgmt_vios_id'] = mgmt_elts[1]
-                    info_hash[obj_key]['mgmt_cec_serial'] = mgmt_elts[2]
-                else:
-                    logging.warning('WARNING: VIOS {} management profile has not 3 elements: {}'.
-                                    format(obj_key, match_mgmtprof.group(1)))
-                continue
+            # Not used in this module so far
+            # match_mgmtprof = re.match(r"^\s+mgmt_profile1\s+=\s+(.*)$", line)
+            # if match_mgmtprof:
+            #     mgmt_elts = match_mgmtprof.group(1).split()
+            #     if len(mgmt_elts) == 3:
+            #         info_hash[obj_key]['mgmt_hmc_id'] = mgmt_elts[0]
+            #         info_hash[obj_key]['mgmt_vios_id'] = mgmt_elts[1]
+            #         info_hash[obj_key]['mgmt_cec_serial'] = mgmt_elts[2]
+            #     else:
+            #         logging.warning('WARNING: VIOS {} management profile has not 3 elements: {}'.
+            #                         format(obj_key, match_mgmtprof.group(1)))
+            #     continue
 
             # Get VIOS interface info in case we need c_rsh
             match_if = re.match(r"^\s+if1\s+=\s+\S+\s+(\S+)\s+.*$", line)
@@ -208,7 +206,7 @@ def check_lpp_source(module, lpp_source):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def check_vios_targets(targets):
+def check_vios_targets(module, targets):
     """
     check the list of the vios targets.
 
@@ -216,6 +214,7 @@ def check_vios_targets(targets):
         (vios1, vios2) (vios3)
 
     arguments:
+        module (hash): the Ansible module
         targets (str): list of tuple of NIM name of vios machine
 
     return: the list of the existing vios tuple matching the target list
@@ -253,13 +252,13 @@ def check_vios_targets(targets):
 
         # check vios is knowed by the NIM master - if not ignore it
         if tuple_elts[0] not in module.nim_node['nim_vios']:
-            msg = "VIOS {} is not client of the NIM master, will be ignored"
+            msg = "VIOS {} is not client of the NIM master, will be ignored"\
                   .format(tuple_elts[0])
             OUTPUT.append(msg)
             logging.warn(msg)
             continue
         if tuple_len == 2 and tuple_elts[1] not in module.nim_node['nim_vios']:
-            msg = "VIOS {} is not client of the NIM master, will be ignored"
+            msg = "VIOS {} is not client of the NIM master, will be ignored"\
                   .format(tuple_elts[1])
             OUTPUT.append(msg)
             logging.warn(msg)
@@ -307,7 +306,7 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
     for vios in target_tuple:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                NIM_NODE['nim_vios'][vios]['vios_ip'],
-               '"/usr/ios/cli/ioscli cluster -status -fmt :"']
+               '"/usr/ios/cli/ioscli cluster -status -fmt : ; echo $?"']
         (ret, std_out) = exec_cmd(cmd, module)
 
         if ret != 0:
@@ -421,12 +420,10 @@ def ssp_stop_start(module, target_tuple, vios, action):
                 node = cur_node
                 break
 
-    clctrl_cmd = '/usr/sbin/clctrl -{} -n {} -m {}'\
-                 .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)
-
     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
            NIM_NODE['nim_vios'][node]['vios_ip'],
-           '"%s"' % (clctrl_cmd)]
+           '"/usr/sbin/clctrl -{} -n {} -m {}; echo $?"'
+           .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)]
     (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
@@ -506,7 +503,7 @@ def get_updateios_cmd(module):
 def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
     """
     Execute the updateios command
-        - module        the module variable
+        - module        the Ansible module
     return
         - ret           return code of nim updateios command
     """
@@ -753,7 +750,7 @@ if __name__ == '__main__':
     # =========================================================================
     # Perfom checks
     # =========================================================================
-    ret = check_vios_targets(targets)
+    ret = check_vios_targets(MODULE, targets)
     if (not ret) or (ret is None):
         OUTPUT.append('Empty target list')
         logging.warn('Warning: Empty target list: "{}"'.format(targets))

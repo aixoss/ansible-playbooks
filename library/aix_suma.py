@@ -27,7 +27,7 @@ import threading
 import logging
 # Ansible module 'boilerplate'
 # pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
-from ansible.module_utils.basic import *
+from ansible.module_utils.basic import AnsibleModule
 
 
 DOCUMENTATION = """
@@ -93,10 +93,10 @@ def run_cmd(machine, result):
     """
     if machine == 'master':
         cmd = ['/usr/bin/oslevel', '-s']
-
     else:
-        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '/usr/bin/oslevel -s']
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
+               machine,
+               '"/usr/bin/oslevel -s; echo $?"']
 
     proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)

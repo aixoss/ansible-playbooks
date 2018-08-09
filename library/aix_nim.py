@@ -23,7 +23,7 @@ import threading
 import logging
 # Ansible module 'boilerplate'
 # pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
-from ansible.module_utils.basic import *
+from ansible.module_utils.basic import AnsibleModule
 
 
 DOCUMENTATION = """
@@ -54,11 +54,10 @@ def run_oslevel_cmd(machine, result):
 
     if machine == 'master':
         cmd = ['/usr/bin/oslevel', '-s']
-
     else:
-        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '/usr/bin/oslevel -s']
-
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
+               machine,
+               '"/usr/bin/oslevel -s; echo $?"']
     try:
         proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
@@ -691,7 +690,7 @@ def list_fixes(target, module):
     if target == 'master':
         cmde = '/usr/sbin/emgr -l'
     else:
-        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} \"/usr/sbin/emgr -l\"'\
+        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} "/usr/sbin/emgr -l; echo $?"'\
                .format(target)
     logging.debug('EMGR list - Command:{}'.format(cmde))
 
@@ -734,7 +733,7 @@ def remove_fix(target, fix, module):
     if target == 'master':
         cmde = '/usr/sbin/emgr -r -L {}'.format(fix)
     else:
-        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} \"/usr/sbin/emgr -r -L {}\"'\
+        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} "/usr/sbin/emgr -r -L {}; echo $?"'\
                .format(target, fix)
     logging.debug('EMGR remove - Command:{}'.format(cmde))
 
@@ -958,8 +957,9 @@ def nim_maintenance(module):
             cmde = '/usr/sbin/nim -o maint -a installp_flags={} -a filesets=ALL {}'\
                    .format(flag, target)
         else:
-            cmde = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', target,
-                    '"/usr/sbin/installp -c all"']
+            cmde = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
+                    target,
+                    '"/usr/sbin/installp -c all; echo $?"']
 
         logging.debug('NIM - Command:{}'.format(cmde))
         NIM_OUTPUT.append('NIM - Command:{}'.format(cmde))
