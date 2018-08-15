@@ -22,14 +22,14 @@ import re
 import subprocess
 import logging
 # Ansible module 'boilerplate'
-# pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
-from ansible.module_utils.basic import *
+from ansible.module_utils.basic import AnsibleModule
 
 
 DOCUMENTATION = """
 ---
 module: aix_nim_vios_hc
-author: "Patrice Jacquin"
+short_description: "Check the pair of VIOS can be updated"
+author: "Patrice Jacquin, Alain Poncet, Vianney Robin"
 version_added: "1.0.0"
 requirements: [ AIX ]
 """
@@ -102,7 +102,7 @@ def get_hmc_info(module):
     std_out = ''
     info_hash = {}
 
-    cmd = ['lsnim', '-t', 'hmc', '-l']
+    cmd = ['LC_ALL=C lsnim', '-t', 'hmc', '-l']
     (ret, std_out) = exec_cmd(cmd, module)
 
     obj_key = ''
@@ -151,7 +151,7 @@ def get_nim_cecs_info(module):
     std_out = ''
     info_hash = {}
 
-    cmd = ['lsnim', '-t', 'cec', '-l']
+    cmd = ['LC_ALL=C lsnim', '-t', 'cec', '-l']
     (ret, std_out) = exec_cmd(cmd, module)
 
     # lpar name and associated Cstate
@@ -185,7 +185,7 @@ def get_nim_clients_info(module, lpar_type):
     std_out = ''
     info_hash = {}
 
-    cmd = ['lsnim', '-t', lpar_type, '-l']
+    cmd = ['LC_ALL=C lsnim', '-t', lpar_type, '-l']
     (ret, std_out) = exec_cmd(cmd, module)
 
     # lpar name and associated Cstate
@@ -346,7 +346,7 @@ def vios_health(module, mgmt_sys_uuid, hmc_ip, vios_uuids):
     logging.debug('hmc_ip: {} vios_uuids: {}'.format(hmc_ip, vios_uuids))
 
     # build the vioshc cmde
-    cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-m', mgmt_sys_uuid]
+    cmd = ['LC_ALL=C /usr/sbin/vioshc.py', '-i', hmc_ip, '-m', mgmt_sys_uuid]
     for vios in vios_uuids:
         cmd.extend(['-U', vios])
     if VERBOSITY != 0:
@@ -402,7 +402,7 @@ def vios_health_init(module, hmc_id, hmc_ip):
     ret = 0
     # if needed, call the /usr/sbin/vioshc.py script a first time to
     # collect UUIDs
-    cmd = ['/usr/sbin/vioshc.py', '-i', hmc_ip, '-l', 'a']
+    cmd = ['LC_ALL=C /usr/sbin/vioshc.py', '-i', hmc_ip, '-l', 'a']
     if VERBOSITY != 0:
         vstr = "-v"
         verbose = 1
@@ -679,7 +679,7 @@ if __name__ == '__main__':
             module.fail_json(msg="Cannot find {}".format(vioshcfile))
 
         st = os.stat(vioshcfile)
-        if not st.st_mode & stat.S_IEXEC:
+        if not st.st_mode & os.stat.S_IEXEC:
             OUTPUT.append('Bad credentials for {}'.format(vioshcfile))
             logging.error('Bad credentials for {}'.format(vioshcfile))
             module.fail_json(msg="Bad credentials for {}".format(vioshcfile))

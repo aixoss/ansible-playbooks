@@ -24,8 +24,7 @@ import logging
 import string
 
 # Ansible module 'boilerplate'
-# pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
-from ansible.module_utils.basic import *
+from ansible.module_utils.basic import AnsibleModule
 
 
 DOCUMENTATION = """
@@ -72,10 +71,11 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        output = re.sub(r'[-\d]+\n$', '', output)  # remove the rc
 
     except subprocess.CalledProcessError as exc:
         # exception for ret_code != 0 can be cached if exit_on_error is set
-        output = exc.output
+        output = re.sub(r'[-\d]+\n$', '', exc.output)  # remove the rc
         ret_code = exc.returncode
         if exit_on_error is True:
             msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'\
@@ -164,7 +164,7 @@ def get_nim_clients_info(module, lpar_type):
     std_out = ''
     info_hash = {}
 
-    cmd = ['lsnim', '-t', lpar_type, '-l']
+    cmd = ['LC_ALL=C lsnim', '-t', lpar_type, '-l']
     (ret, std_out) = exec_cmd(cmd, module)
 
     # lpar name and associated Cstate
@@ -333,7 +333,7 @@ def get_pvs(module, vios):
 
     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
            NIM_NODE['nim_vios'][vios]['vios_ip'],
-           '"/usr/ios/cli/ioscli lspv"']
+           '"/usr/ios/cli/ioscli lspv; echo $?"']
     (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
@@ -380,7 +380,7 @@ def get_free_pvs(module, vios):
 
     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
            NIM_NODE['nim_vios'][vios]['vios_ip'],
-           '"/usr/ios/cli/ioscli lspv -free"']
+           '"/usr/ios/cli/ioscli lspv -free; echo $?"']
     (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
@@ -429,7 +429,7 @@ def get_vg_size(module, vios, vg_name, used_lp):
 
     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
            NIM_NODE['nim_vios'][vios]['vios_ip'],
-           '"LANG=C; /usr/ios/cli/ioscli lsvg {}"'.format(vg_name)]
+           '"LC_ALL=C; /usr/ios/cli/ioscli lsvg {}; echo $?"'.format(vg_name)]
     (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
@@ -514,9 +514,9 @@ def find_valid_altdisk(module, action, vios_dict, vios_key, rootvg_info, altdisk
                                        .format(err_label, vios)
             return 1
 
-        # check an alternat disk not already exists
+        # check an alternate disk not already exists
         for hdisk in pvs:
-            if pvs[hdisk]['vg'] == "altinst_rootvg":
+            if pvs[hdisk]['vg'] == 'altinst_rootvg':
                 altdisk_op_tab[vios_key] = "{} an alternate disk ({}) already exists on {}"\
                                            .format(err_label, hdisk, vios)
                 OUTPUT.append('    An alternate disk is already available on disk {} on {}'
@@ -700,7 +700,7 @@ def check_rootvg(module, vios):
 
     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
            NIM_NODE['nim_vios'][vios]['vios_ip'],
-           '"LANG=C; /usr/sbin/lsvg -M rootvg"']
+           '"LC_ALL=C; /usr/sbin/lsvg -M rootvg; echo $?"']
     (ret, std_out) = exec_cmd(cmd, module)
     # lsvg -M rootvg command OK, check mirroring
     # hdisk4:453      hd1:101
@@ -717,8 +717,6 @@ def check_rootvg(module, vios):
     # ..
 
     if ret != 0:  # c_rsh command failed
-        altdisk_op_tab[vios_key] = "{} to test mirror on {}"\
-                                   .format(err_label, vios)
         OUTPUT.append('    Failed to test mirror on {}: {}'
                       .format(vios, std_out))
         logging.error('Failed to test mirror on {}: {}'
@@ -753,7 +751,7 @@ def check_rootvg(module, vios):
         if hdisk in hdisk_dict.keys():
             if hdisk_dict[hdisk] != copy:
                 msg = "rootvg data structure is not compatible with an "\
-                      "alt_dik_copy operation (2 copies on the same disk)"
+                      "alt_disk_copy operation (2 copies on the same disk)"
                 OUTPUT.append('    ' + msg)
                 logging.error(msg)
                 return vg_info
@@ -762,7 +760,7 @@ def check_rootvg(module, vios):
 
         if copy not in copy_dict.keys():
             if hdisk in copy_dict.values():
-                msg = "rootvg data structure is not compatible with an alt_dik_copy operation"
+                msg = "rootvg data structure is not compatible with an alt_disk_copy operation"
                 OUTPUT.append('    ' + msg)
                 logging.error(msg)
                 return vg_info
@@ -770,9 +768,9 @@ def check_rootvg(module, vios):
 
     if len(copy_dict.keys()) > 1:
         if len(copy_dict.keys()) != len(hdisk_dict.keys()):
-            msg = "The {} rootvg is partially or commpletly mirrored but somme "\
-                  "lpp copy are spread on several disks. This prevent the "\
-                  "system to build an alternate rootvg disk copy"\
+            msg = "The {} rootvg is partially or completly mirrored but some "\
+                  "LP copies are spread on several disks. This prevents the "\
+                  "system from creating an alternate rootvg disk copy."\
                   .format(vios)
             OUTPUT.append('    ' + msg)
             logging.error(msg)
@@ -781,7 +779,7 @@ def check_rootvg(module, vios):
         # the (rootvg) is mirrored then get the size of hdisk from copy1
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                NIM_NODE['nim_vios'][vios]['vios_ip'],
-               '"LANG=C; /usr/sbin/lsvg -p rootvg"']
+               '"LC_ALL=C; /usr/sbin/lsvg -p rootvg; echo $?"']
         (ret, std_out) = exec_cmd(cmd, module)
 
         if ret != 0:
@@ -816,14 +814,14 @@ def check_rootvg(module, vios):
     # get now the rootvg pp size
     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
            NIM_NODE['nim_vios'][vios]['vios_ip'],
-           '"LANG=C; /usr/sbin/lsvg rootvg"']
+           '"LC_ALL=C; /usr/sbin/lsvg rootvg; echo $?"']
     (ret, std_out) = exec_cmd(cmd, module)
 
     if ret != 0:
-        OUTPUT.append('    Failed to get {} VG size on {}, lsvg returns: {}'
-                      .format(vg_name, vios, std_out))
-        logging.error('Failed to get {} VG size on {}, lsvg returns: {} {}'
-                      .format(vg_name, vios, ret, std_out))
+        OUTPUT.append('    Failed to get rootvg VG size on {}, lsvg returns: {}'
+                      .format(vios, std_out))
+        logging.error('Failed to get rootvg VG size on {}, lsvg returns: {} {}'
+                      .format(vios, ret, std_out))
         return vg_info
 
     # parse lsvg outpout to get the size in megabytes:
@@ -892,7 +890,7 @@ def check_valid_altdisk(module, action, vios, vios_dict, vios_key, altdisk_op_ta
         return 1
 
     if vios_dict[vios] != "":
-        if vios_dict[vios] in pvs and pvs[vios_dict[vios]]['vg'] == "altinst_rootvg":
+        if vios_dict[vios] in pvs and pvs[vios_dict[vios]]['vg'] == 'altinst_rootvg':
             return 0
         else:
             altdisk_op_tab[vios_key] = "{} disk {} is not an alternate install rootvg on {}"\
@@ -905,7 +903,7 @@ def check_valid_altdisk(module, action, vios, vios_dict, vios_key, altdisk_op_ta
     else:
         # check there is one and only one alternate install rootvg
         for hdisk in pvs.keys():
-            if pvs[hdisk]['vg'] == "altinst_rootvg":
+            if pvs[hdisk]['vg'] == 'altinst_rootvg':
                 if vios_dict[vios]:
                     altdisk_op_tab[vios_key] = "{} there are several alternate"\
                                                " install rootvg on {}"\
@@ -1025,7 +1023,7 @@ def wait_altdisk_install(module, vios, vios_dict, vios_key, altdisk_op_tab, err_
 # ----------------------------------------------------------------
 def alt_disk_action(module, action, targets, vios_status, time_limit):
     """
-    alt_dik_copy / alt_disk_clean operation
+    alt_disk_copy / alt_disk_clean operation
 
     For line VIOS tuple,
     - retrieve the previous status if any (looking for SUCCESS-HC and SUCCESS-UPDT)
@@ -1138,7 +1136,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                     std_out = ''
                     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                            NIM_NODE['nim_vios'][vios]['vios_ip'],
-                           '"LANG=C; /usr/sbin/unmirrorvg rootvg 2>&1"']
+                           '"LC_ALL=C; /usr/sbin/unmirrorvg rootvg 2>&1; echo $?"']
                     (ret, std_out) = exec_cmd(cmd, module)
 
                     if ret != 0:  # c_rsh command Failed
@@ -1195,11 +1193,11 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                     logging.info('Restore mirror on {}'.format(vios))
                     ret = 0
                     std_out = ''
-                    mirror_cmd = "LANG=C; /usr/sbin/mirrorvg -m -c {} rootvg {} "\
+                    mirror_cmd = "LC_ALL=C; /usr/sbin/mirrorvg -m -c {} rootvg {} "\
                                  .format(nb_copies, copies_h[2])
                     if nb_copies > 2:
                         mirror_cmd += copies_h[3]
-                    mirror_cmd += " 2>&1"
+                    mirror_cmd += " 2>&1; echo $?"
 
                     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                            NIM_NODE['nim_vios'][vios]['vios_ip'], mirror_cmd]
@@ -1256,7 +1254,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                 std_out = ''
                 cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                        NIM_NODE['nim_vios'][vios]['vios_ip'],
-                       '"/usr/sbin/alt_rootvg_op -X altinst_rootvg"']
+                       '"/usr/sbin/alt_rootvg_op -X altinst_rootvg; echo $?"']
                 (ret, std_out) = exec_cmd(cmd, module)
 
                 if ret != 0:
@@ -1275,7 +1273,7 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                 std_out = ''
                 cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                        NIM_NODE['nim_vios'][vios]['vios_ip'],
-                       '"/usr/sbin/chpv -C {}"'
+                       '"/usr/sbin/chpv -C {}; echo $?"'
                        .format(vios_dict[vios])]
                 (ret, std_out) = exec_cmd(cmd, module)
 
@@ -1283,9 +1281,9 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                     altdisk_op_tab[vios_key] = "{} to clean PVID of {} on {}"\
                                                .format(err_label, vios_dict[vios], vios)
                     OUTPUT.append('    Failed to clean PVID of {} on {}: {}'
-                                  .format(vios_dict[vios], vios, std_err))
+                                  .format(vios_dict[vios], vios, std_out))
                     logging.error('Failed to clean PVID of {} on {}: {}'
-                                  .format(vios_dict[vios], vios, std_err))
+                                  .format(vios_dict[vios], vios, std_out))
                     continue
 
                 OUTPUT.append('    Clean of {} Success'.format(vios_dict[vios]))

@@ -60,10 +60,11 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=shell)
+        output = re.sub(r'[-\d]+\n$', '', output)  # remove the rc
 
     except subprocess.CalledProcessError as exc:
         # exception for ret_code != 0 can be cached if exit_on_error is set
-        output = exc.output
+        output = re.sub(r'[-\d]+\n$', '', exc.output)  # remove the rc
         ret_code = exc.returncode
         if exit_on_error is True:
             msg = 'Command: {} RetCode:{} ... Error:{}'\
@@ -100,7 +101,7 @@ def get_nim_clients_info(module, lpar_type):
     std_out = ''
     info_hash = {}
 
-    cmd = ['lsnim', '-t', lpar_type, '-l']
+    cmd = ['LC_ALL=C lsnim', '-t', lpar_type, '-l']
     (ret, std_out) = exec_cmd(cmd, module)
     if ret != 0:
         logging.error('Cannot list NIM {} objects'.format(lpar_type))
@@ -306,7 +307,7 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
     for vios in target_tuple:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                NIM_NODE['nim_vios'][vios]['vios_ip'],
-               '"/usr/ios/cli/ioscli cluster -status -fmt : ; echo $?"']
+               '"LC_ALL=C /usr/ios/cli/ioscli cluster -status -fmt : ; echo $?"']
         (ret, std_out) = exec_cmd(cmd, module)
 
         if ret != 0:
@@ -587,7 +588,7 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
                 logging.info('Commit all applied lpps before the update on {}'
                              .format(vios))
 
-                cmd_commit = 'LANG=C; /usr/sbin/nim -o updateios '\
+                cmd_commit = 'LC_ALL=C /usr/sbin/nim -o updateios '\
                              '-a updateios_flags=-commit -a filesets=all {} 2>&1'\
                              .format(vios)
                 logging.debug('NIM - Command:{}'.format(cmd_commit))

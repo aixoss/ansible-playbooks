@@ -203,9 +203,11 @@ def exec_cmd(cmd):
     logging.debug("exec command:{}".format(cmd))
     try:
         std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        std_out = re.sub(r'[-\d]+\n$', '', std_out)  # remove the rc
     except subprocess.CalledProcessError as excep:
+        std_out = re.sub(r'[-\d]+\n$', '', excep.output)  # remove the rc
         msg = "Command: {} Exception.Args{} =>Data:{} ... Error :{}"\
-              .format(cmd, excep.cmd, excep.output, excep.returncode)
+              .format(cmd, excep.cmd, std_out, excep.returncode)
         return 1, msg
     except Exception as excep:
         msg = "Command: {} Exception.Args{} =>Data:{} ... Error :{}"\
@@ -231,7 +233,7 @@ def get_nim_clients(module):
     std_err = ''
     clients_list = []
 
-    cmd = ['lsnim', '-t', 'standalone']
+    cmd = ['LC_ALL=C lsnim', '-t', 'standalone']
 
     try:
         proc = subprocess.Popen(cmd, shell=False, stdin=None,
@@ -272,7 +274,7 @@ def get_nim_lpp_source():
     # std_err = ''
     lpp_source_list = {}
 
-    cmd = ['lsnim', '-t', 'lpp_source', '-l']
+    cmd = ['LC_ALL=C lsnim', '-t', 'lpp_source', '-l']
 
     ret, std_out = exec_cmd(cmd)
 
@@ -388,7 +390,7 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
         suma_dltarget = "DLTarget={}".format(metadata_dir)
         suma_display = "DisplayName='{}'".format(PARAMS['Description'])
 
-        cmd = ['/usr/sbin/suma', '-x', '-a', 'Action=Metadata',
+        cmd = ['LC_ALL=C /usr/sbin/suma', '-x', '-a', 'Action=Metadata',
                '-a', 'RqType=Latest', '-a', suma_filterml,
                '-a', suma_dltarget, '-a', suma_display]
 
@@ -448,7 +450,7 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
             suma_dltarget = 'DLTarget={}'.format(metadata_dir)
             suma_display = 'DisplayName="{}"'.format(PARAMS['Description'])
 
-            cmd = ['/usr/sbin/suma', '-x', '-a', 'Action=Metadata',
+            cmd = ['LC_ALL=C /usr/sbin/suma', '-x', '-a', 'Action=Metadata',
                    '-a', 'RqType=Latest', '-a', suma_filterml,
                    '-a', suma_dltarget, '-a', suma_display]
 
@@ -592,7 +594,7 @@ def suma_command(module, action):
     if rq_type == 'Latest':
         rq_type = 'SP'
 
-    suma_cmd = '/usr/sbin/suma -x -a RqType={} '.format(rq_type)
+    suma_cmd = 'LC_ALL=C /usr/sbin/suma -x -a RqType={} '.format(rq_type)
     suma_action = '-a Action={} '.format(action)
     suma_filterml = '-a FilterML={} '.format(PARAMS['FilterMl'])
     suma_dltarget = '-a DLTarget={} '.format(PARAMS['DLTarget'])
@@ -629,7 +631,7 @@ def nim_command(module):
        ret     NIM command return code
        stdout  NIM command output
     """
-    nim_cmd = '/usr/sbin/nim  -o define  -t lpp_source  -a server=master '
+    nim_cmd = 'LC_ALL=C /usr/sbin/nim  -o define  -t lpp_source  -a server=master '
     nim_location = '-a location={} '.format(PARAMS['DLTarget'])
     nim_package = '-a packages=all {} '.format(PARAMS['LppSource'])
     nim_comments = '-a comments={} '.format(PARAMS['Comments'])
@@ -664,7 +666,7 @@ def suma_list(module):
     task = PARAMS['task_id']
     if task is None or task.strip() == '':
         task = ''
-    cmde = "/usr/sbin/suma -l {}".format(task)
+    cmde = "LC_ALL=C /usr/sbin/suma -l {}".format(task)
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -703,7 +705,7 @@ def suma_edit(module):
     Depending on the shed_time parameter value, the task wil be scheduled,
         unscheduled or saved
     """
-    cmde = '/usr/sbin/suma'
+    cmde = 'LC_ALL=C /usr/sbin/suma'
     if PARAMS['sched_time'] is None:
         # save
         cmde += ' w'
@@ -747,7 +749,7 @@ def suma_unschedule(module):
     """
     Unschedule a SUMA task associated with the given task ID
     """
-    cmde = "/usr/sbin/suma -u {}".format(PARAMS['task_id'])
+    cmde = "LC_ALL=C /usr/sbin/suma -u {}".format(PARAMS['task_id'])
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -767,7 +769,7 @@ def suma_delete(module):
     """
     Delete the SUMA task associated with the given task ID
     """
-    cmde = "/usr/sbin/suma -d {}".format(PARAMS['task_id'])
+    cmde = "LC_ALL=C /usr/sbin/suma -d {}".format(PARAMS['task_id'])
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -787,7 +789,7 @@ def suma_config(module):
     """
     List the SUMA global configuration settings
     """
-    cmde = '/usr/sbin/suma -c'
+    cmde = 'LC_ALL=C /usr/sbin/suma -c'
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -807,7 +809,7 @@ def suma_default(module):
     """
     List default SUMA tasks
     """
-    cmde = '/usr/sbin/suma -D'
+    cmde = 'LC_ALL=C /usr/sbin/suma -D'
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:

@@ -98,9 +98,11 @@ def exec_cmd(cmd, module):
     logging.debug('exec command:{}'.format(cmd))
     try:
         std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        std_out = re.sub(r'[-\d]+\n$', '', std_out)  # remove the rc
     except subprocess.CalledProcessError as exc:
+        std_out = re.sub(r'[-\d]+\n$', '', exc.output)  # remove the rc
         msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
-              .format(cmd, exc.cmd, exc.output, exc.returncode)
+              .format(cmd, exc.cmd, std_out, exc.returncode)
         module.fail_json(msg=msg)
     except Exception as exc:
         msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
@@ -572,7 +574,7 @@ def perform_async_customization(module, lpp_source, targets):
     logging.debug('NIM - perform_async_customization - lpp_spource: {}, targets: {} '
                   .format(lpp_source, targets))
 
-    cmde = '/usr/sbin/nim -o cust -a lpp_source={} -a fixes=update_all '\
+    cmde = 'LC_ALL=C /usr/sbin/nim -o cust -a lpp_source={} -a fixes=update_all '\
            '-a accept_licenses=yes -a async=yes {}'.format(lpp_source, targets)
 
     logging.debug('NIM - Command:{}'.format(cmde))
@@ -627,7 +629,7 @@ def perform_sync_customization(module, lpp_source, targets):
         'NIM - perform_sync_customization - lpp_spource: {}, targets: {} '
         .format(lpp_source, targets))
 
-    cmde = '/usr/sbin/nim -o cust -a lpp_source={} -a fixes=update_all '\
+    cmde = 'LC_ALL=C /usr/sbin/nim -o cust -a lpp_source={} -a fixes=update_all '\
            '-a accept_licenses=yes -a async=no {}'.format(lpp_source, targets)
 
     logging.debug('NIM - Command:{}'.format(cmde))
@@ -688,9 +690,9 @@ def list_fixes(target, module):
 
     fixes = []
     if target == 'master':
-        cmde = '/usr/sbin/emgr -l'
+        cmde = 'LC_ALL=C /usr/sbin/emgr -l'
     else:
-        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} "/usr/sbin/emgr -l; echo $?"'\
+        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} "LC_ALL=C /usr/sbin/emgr -l; echo $?"'\
                .format(target)
     logging.debug('EMGR list - Command:{}'.format(cmde))
 

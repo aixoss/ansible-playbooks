@@ -34,7 +34,6 @@ import calendar
 from collections import OrderedDict
 
 # Ansible module 'boilerplate'
-# pylint: disable=wildcard-import,unused-wildcard-import
 from ansible.module_utils.basic import AnsibleModule
 
 DOCUMENTATION = """
@@ -173,7 +172,8 @@ def remove_efix(machine, output):
         match = re.match(r'^\d+\s+(\S+)\s+REMOVE\s+(\S+)\s*$', line)
         if match:
             if 'SUCCESS' in match.group(2):
-                msg = 'efix {} removed, please check if you want to reinstall it'.format(match.group(1))
+                msg = 'efix {} removed, please check if you want to reinstall it'\
+                      .format(match.group(1))
                 logging.info(machine + ': ' + msg)
                 output['messages'].append(msg)
             else:
@@ -290,7 +290,7 @@ def check_epkgs(epkg_list, lpps, efixes, machine, output):
         # get efix information
         stdout = ''
         try:
-            cmd = '/usr/sbin/emgr -dXv3 -e {} | /bin/grep -p -e PREREQ -e PACKAG'\
+            cmd = 'LC_ALL=C /usr/sbin/emgr -dXv3 -e {} | /bin/grep -p -e PREREQ -e PACKAG'\
                   .format(epkg['path'])
             stdout = subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
         except subprocess.CalledProcessError as exc:
@@ -458,7 +458,7 @@ def run_lslpp(machine, filename, output):
         cmd = ['/bin/lslpp', '-Lcq']
     else:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '"/bin/lslpp -Lcq; echo $?"']
+               '"LC_ALL=C /bin/lslpp -Lcq; echo $?"']
     (res, stdout, stderr) = exec_cmd(cmd, output)
 
     if res == 0:
@@ -546,7 +546,7 @@ def run_emgr(machine, f_efix, output):
         cmd = ['/usr/sbin/emgr', '-lv3']
     else:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '"/usr/sbin/emgr -lv3; echo $?"']
+               '"LC_ALL=C /usr/sbin/emgr -lv3; echo $?"']
     (res, stdout, stderr) = exec_cmd(cmd, output)
     if res == 0:
         with open(f_efix, 'w') as myfile:
@@ -608,7 +608,7 @@ def run_flrtvc(machine, output, params, force):
 
     try:
         # Prepare flrtvc command
-        cmd = ['/usr/bin/flrtvc.ksh', '-e', emgr_file, '-l', lslpp_file]
+        cmd = ['LC_ALL=C /usr/bin/flrtvc.ksh', '-e', emgr_file, '-l', lslpp_file]
         if params['apar_type'] and params['apar_type'] != 'all':
             cmd += ['-t', params['apar_type']]
         if params['apar_csv']:
@@ -1054,7 +1054,6 @@ def check_targets(targets_list, nim_clients, output):
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
                '"/usr/bin/ls; echo $?"']
         (res, stdout, stderr) = exec_cmd(cmd, output)
-        # res = 0  # TODO: remove this DEBUG assignement
         if res == 0:
             targets.append(machine)
         else:
