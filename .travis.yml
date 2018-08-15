@@ -22,7 +22,8 @@ script:
   #  F403: <module> import *' used; unable to detect undefined names
   #  F405: <var> may be undefined, or defined from star imports
   #  W503: line break before binary operator (PEP8 advices to put logical operator ahead)
-  - flake8 library/* --max-line-length=100 --ignore F403,F405,W503
+  #- flake8 library/* --max-line-length=100 --ignore F403,F405,W503
+  - flake8 library/* --max-line-length=100
 
   # pycodestyle (PEP8)
   - pycodestyle library/* --max-line-length=100
