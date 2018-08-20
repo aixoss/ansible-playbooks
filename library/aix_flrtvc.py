@@ -126,7 +126,7 @@ def download(src, dst):
             if exc.returncode == 3:
                 increase_fs(dst)
                 os.remove(dst)
-                download(src, dst)
+                res = download(src, dst)
     else:
         logging.debug('{} already exists'.format(dst))
     return res
