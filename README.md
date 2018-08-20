@@ -123,7 +123,7 @@ Must be described in yaml format with the following parameters:
 
 ```yaml
     aix_nim_updateios:
-      targets:          a list of VIOS to act upon depending on the "action" specified;
+      targets:          required; a list of VIOS to act upon depending on the "action" specified;
                         to perform an update on dual VIOS, specify the list as a tuple
                         with the following format : "(gdrh9v1, gdrh9v2) (gdrh10v1, gdrh10v2)”;
                         to specify a single VIOS, use the following format : "(gdrh11v0)".
@@ -137,7 +137,7 @@ Must be described in yaml format with the following parameters:
       accept_licenses:  specify whether the software licenses should be automatically accepted
                         during the installation;
                         default value: "yes".
-      action:           the operation to perform on the VIOS;
+      action:           required; the operation to perform on the VIOS;
                         possible values are : "install", "commit", "reject", "cleanup" and "remove";
                         "reject" is not supported by the latest version of updateios.
       preview:          specify that only a preview operation will be performed
@@ -160,11 +160,11 @@ Must be described in yaml format with the following parameters:
 
 ```yaml
     aix_nim_vios_hc:
-      targets:          a list of VIOS to act upon depending on the "action" specified;
+      targets:          required; a list of VIOS to act upon depending on the "action" specified;
                         to perform a health check on dual VIOS, specify the list as a tuple
                         with the following format : "(gdrh9v1, gdrh9v2) (gdrh10v1, gdrh10v2)”;
                         to specify a single VIOS, use the following format : "(gdrh11v0)".
-      action:           the operation to perform on the VIOS;
+      action:           required; the operation to perform on the VIOS;
                         must be set to "health_check".
 
 ```
@@ -177,16 +177,20 @@ Must be described in yaml format with the following parameters:
 
 ```yaml
     aix_nim_vios_alt_disk:
-      targets:          a list of VIOS to act upon depending on the "action" specified;
+      targets:          required; a list of VIOS to act upon depending on the "action" specified;
                         use a tuple format with the 1st element the VIOS and the 2nd element
                         the disk used for the alternate disk copy;
                         for a dual VIOS, the format will look like : "(vios1,disk1,vios2,disk2)";
                         for a single VIOS, the format will look like : "(vios1,disk1)".
-      action:           the operation to perform on the VIOS;
+      action:           required; the operation to perform on the VIOS;
                         2 possible values : "alt_disk_copy" and "alt_disk_clean".
-      time_limit:       when this parameter is specified, before starting the updateios action
+      disk_size_policy: specify how the choose the alternate disk if not specified;
+                        4 possible values : "nearest" (default), "lower", "upper", "minimize".
+      time_limit:       when this parameter is specified, before starting the altternate disk action
                         specified on a new VIOS in the "targets" list, the actual date is compared
                         to this parameter value; if it is greater then the task is stopped
                         the format is mm/dd/yyyy hh:mm
+      force:            when set to "yes", any existing altinst_rootvg is cleaned before looking for
+                        an alternate disk for the copy operation.
 
 ```

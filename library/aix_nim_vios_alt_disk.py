@@ -490,6 +490,7 @@ def find_valid_altdisk(module, action, vios_dict, vios_key, rootvg_info, altdisk
     global NIM_NODE
     global OUTPUT
     global PARAMS
+    global CHANGED
 
     pvs = {}
     used_pv = []
@@ -506,6 +507,42 @@ def find_valid_altdisk(module, action, vios_dict, vios_key, rootvg_info, altdisk
             altdisk_op_tab[vios_key] = "{} wrong rootvg state on {}"\
                                        .format(err_label, vios)
             return 1
+
+        # Clean existing altinst_rootvg if needed
+        if PARAMS['force'] == 'yes':
+            OUTPUT.append('    Remove altinst_rootvg from {} of {}'
+                          .format(vios_dict[vios], vios))
+            ret = 0
+            std_out = ''
+            cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
+                   NIM_NODE['nim_vios'][vios]['vios_ip'],
+                   '"/usr/sbin/alt_rootvg_op -X altinst_rootvg; echo $?"']
+            (ret, std_out) = exec_cmd(cmd, module)
+            if ret != 0:
+                altdisk_op_tab[vios_key] = "{} to remove altinst_rootvg on {}"\
+                                           .format(err_label, vios)
+                OUTPUT.append('    Failed to remove altinst_rootvg on {}: {}'
+                              .format(vios, std_out))
+                logging.error('Failed to remove altinst_rootvg on {}: {}'
+                              .format(vios, std_out))
+            else:
+                ret = 0
+                std_out = ''
+                cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
+                       NIM_NODE['nim_vios'][vios]['vios_ip'],
+                       '"/usr/sbin/chpv -C {}; echo $?"'
+                       .format(vios_dict[vios])]
+                (ret, std_out) = exec_cmd(cmd, module)
+                if ret != 0:
+                    altdisk_op_tab[vios_key] = "{} to clean PVID of {} on {}"\
+                                               .format(err_label, vios_dict[vios], vios)
+                    OUTPUT.append('    Failed to clean PVID of {} on {}: {}'
+                                  .format(vios_dict[vios], vios, std_out))
+                    logging.error('Failed to clean PVID of {} on {}: {}'
+                                  .format(vios_dict[vios], vios, std_out))
+                    continue
+                OUTPUT.append('    Clean of {} Success'.format(vios_dict[vios]))
+                CHANGED = True
 
         # get pv list
         pvs = get_pvs(module, vios)
@@ -1319,6 +1356,7 @@ if __name__ == '__main__':
             disk_size_policy=dict(required=False,
                                   choice=['minimize', 'upper', 'lower', 'nearest'],
                                   type='str'),
+            force=dict(choices=['yes', 'no'], required=False, type='str'),
         ),
         supports_check_mode=True
     )
@@ -1339,10 +1377,14 @@ if __name__ == '__main__':
     else:
         disk_size_policy = 'nearest'
 
+    if 'force' not in module.params['force'] or not module.params['force']:
+        force = module.params['force'] = 'no'
+
     PARAMS['action'] = action
     PARAMS['targets'] = targets
     PARAMS['Description'] = description
     PARAMS['disk_size_policy'] = disk_size_policy
+    PARAMS['force'] = force
 
     if module.params['time_limit']:
         time_limit = module.params['time_limit']
