@@ -534,14 +534,14 @@ def find_valid_altdisk(module, action, vios_dict, vios_key, rootvg_info, altdisk
                        .format(vios_dict[vios])]
                 (ret, std_out) = exec_cmd(cmd, module)
                 if ret != 0:
-                    altdisk_op_tab[vios_key] = "{} to clean PVID of {} on {}"\
+                    altdisk_op_tab[vios_key] = "{} to clear altinst_rootvg from {} on {}"\
                                                .format(err_label, vios_dict[vios], vios)
-                    OUTPUT.append('    Failed to clean PVID of {} on {}: {}'
+                    OUTPUT.append('    Failed to clear altinst_rootvg from disk {} on {}: {}'
                                   .format(vios_dict[vios], vios, std_out))
-                    logging.error('Failed to clean PVID of {} on {}: {}'
+                    logging.error('Failed to clear altinst_rootvg from disk {} on {}: {}'
                                   .format(vios_dict[vios], vios, std_out))
                     continue
-                OUTPUT.append('    Clean of {} Success'.format(vios_dict[vios]))
+                OUTPUT.append('    Clear altinst_rootvg from disk {}: Success'.format(vios_dict[vios]))
                 CHANGED = True
 
         # get pv list
@@ -1303,8 +1303,8 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                                   .format(vios, std_out))
                     continue
 
-                # Clear the hdisk PVID and the LVM info on the disk itself
-                OUTPUT.append('    Clean the PVID and LVM info of {} on {}'
+                # Clears the owning VG from the disk
+                OUTPUT.append('    Clear the owning VG from disk {} on {}'
                               .format(vios_dict[vios], vios))
                 ret = 0
                 std_out = ''
@@ -1315,15 +1315,15 @@ def alt_disk_action(module, action, targets, vios_status, time_limit):
                 (ret, std_out) = exec_cmd(cmd, module)
 
                 if ret != 0:
-                    altdisk_op_tab[vios_key] = "{} to clean PVID of {} on {}"\
+                    altdisk_op_tab[vios_key] = "{} to clear altinst_rootvg from {} on {}"\
                                                .format(err_label, vios_dict[vios], vios)
-                    OUTPUT.append('    Failed to clean PVID of {} on {}: {}'
+                    OUTPUT.append('    Failed to clear altinst_rootvg from disk {} on {}: {}'
                                   .format(vios_dict[vios], vios, std_out))
-                    logging.error('Failed to clean PVID of {} on {}: {}'
+                    logging.error('Failed to clear altinst_rootvg from disk {} on {}: {}'
                                   .format(vios_dict[vios], vios, std_out))
                     continue
 
-                OUTPUT.append('    Clean of {} Success'.format(vios_dict[vios]))
+                OUTPUT.append('    Clear altinst_rootvg from disk {}: Success'.format(vios_dict[vios]))
                 CHANGED = True
 
     logging.debug('altdisk_op_tab: {}'. format(altdisk_op_tab))
