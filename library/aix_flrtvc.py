@@ -162,10 +162,15 @@ def remove_efix(machine, output):
     res = 0
     logging.debug('{}: Removing all installed efix'.format(machine))
 
-    cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-           '"rc=0;'
-           ' for i in `/usr/sbin/emgr -P | /usr/bin/tail -n +4 | /usr/bin/awk \'{print $NF}\'`;'
-           ' do /usr/sbin/emgr -r -L $i || rc=$?; done; echo $rc"']
+    if 'master' in machine:
+        cmd = []
+    else:
+        cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine]
+
+    cmd += ['"export LC_ALL=C; rc=0;'
+            ' for i in `/usr/sbin/emgr -P |/usr/bin/tail -n +4 |/usr/bin/awk \'{print \$NF}\'`;'
+            ' do /usr/sbin/emgr -r -L $i || (( rc = rc | $? )); done; echo rc=$rc"']
+
     (ret, stdout, stderr) = exec_cmd(cmd, output)
 
     for line in stdout.splitlines():
@@ -293,6 +298,7 @@ def check_epkgs(epkg_list, lpps, efixes, machine, output):
             cmd = 'LC_ALL=C /usr/sbin/emgr -dXv3 -e {} | /bin/grep -p -e PREREQ -e PACKAG'\
                   .format(epkg['path'])
             stdout = subprocess.check_output(args=cmd, shell=True, stderr=subprocess.STDOUT)
+
         except subprocess.CalledProcessError as exc:
             logging.warning('EXCEPTION cmd={} rc={} output={}'
                             .format(exc.cmd, exc.returncode, exc.output))
@@ -438,6 +444,10 @@ def parse_lpps_info(machine, out):
         for myline in myfile:
             # beginning of line: "bos:bos.rte:7.1.5.0: : :C: :Base Operating System Runtime"
             mylist = myline.split(':')
+            if len(mylist) < 3:
+                logging.error('{} file {} is malformed: got line: "{}"'
+                              .format(machine, lslpp_file, myline))
+                continue
             lpps_lvl[mylist[1]] = {'str': mylist[2]}
             mylist[2] = re.sub(r'-', '.', mylist[2])
             lpps_lvl[mylist[1]]['int'] = list(map(int, mylist[2].split('.')))
@@ -458,7 +468,7 @@ def run_lslpp(machine, filename, output):
         cmd = ['/bin/lslpp', '-Lcq']
     else:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '"LC_ALL=C /bin/lslpp -Lcq; echo $?"']
+               '"/bin/lslpp -Lcq; echo rc=$?"']
     (res, stdout, stderr) = exec_cmd(cmd, output)
 
     if res == 0:
@@ -546,7 +556,7 @@ def run_emgr(machine, f_efix, output):
         cmd = ['/usr/sbin/emgr', '-lv3']
     else:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '"LC_ALL=C /usr/sbin/emgr -lv3; echo $?"']
+               '"/usr/sbin/emgr -lv3; echo rc=$?"']
     (res, stdout, stderr) = exec_cmd(cmd, output)
     if res == 0:
         with open(f_efix, 'w') as myfile:
@@ -618,19 +628,26 @@ def run_flrtvc(machine, output, params, force):
 
         # Run flrtvc in compact mode
         logging.debug('{}: run cmd "{}"'.format(machine, ' '.join(cmd)))
-        flrtvc_stderr = os.path.join(WORKDIR, 'flrtvc_stderr_{}.txt'.format(machine))
-        myfile = open(flrtvc_stderr, 'w')
-        stdout_c = subprocess.check_output(args=cmd, stderr=myfile)
-        output.update({'0.report': stdout_c.splitlines()})
-        myfile.close()
-        # check for error message
-        if os.path.getsize(flrtvc_stderr) > 0:
-            with open(flrtvc_stderr, 'r') as myfile:
-                msg = ' '.join([line.rstrip('\n') for line in myfile])
-                msg = '{}: {}'.format(machine, msg)
-                logging.error(msg)
-                output['messages'].append(msg)
-        os.remove(flrtvc_stderr)
+        (res, stdout, errout) = exec_cmd(' '.join(cmd), output, False, True)
+        if res != 0:
+            msg = 'flrtvc failed: "{}"'.format(stderr)
+            logging.error('{}: {}'.format(machine, msg))
+            output['messages'].append(msg)
+        output.update({'0.report': stdout.splitlines()})
+
+        # flrtvc_stderr = os.path.join(WORKDIR, 'flrtvc_stderr_{}.txt'.format(machine))
+        # myfile = open(flrtvc_stderr, 'w')
+        # stdout_c = subprocess.check_output(args=cmd, stderr=myfile, shell=True)
+        # output.update({'0.report': stdout_c.splitlines()})
+        # myfile.close()
+        # # check for error message
+        # if os.path.getsize(flrtvc_stderr) > 0:
+        #     with open(flrtvc_stderr, 'r') as myfile:
+        #         msg = ' '.join([line.rstrip('\n') for line in myfile])
+        #         msg = '{}: {}'.format(machine, msg)
+        #         logging.error(msg)
+        #         output['messages'].append(msg)
+        # os.remove(flrtvc_stderr)
 
         # Save to file
         if params['dst_path']:
@@ -640,15 +657,21 @@ def run_flrtvc(machine, output, params, force):
             with open(filename, 'w') as myfile:
                 if params['verbose']:
                     cmd += ['-v']
-                    myfile.write(subprocess.check_output(args=cmd, stderr=subprocess.STDOUT))
-                else:
-                    myfile.write(stdout_c)
+                    logging.debug('{}: run cmd "{}"'.format(machine, ' '.join(cmd)))
+                    (res, stdout, errout) = exec_cmd(' '.join(cmd), output, False, True)
+                    if res != 0:
+                        msg = 'flrtvc failed: "{}"'.format(stderr)
+                        logging.error('{}: {}'.format(machine, msg))
+                        output['messages'].append(msg)
+                myfile.write(stdout)
+
     except subprocess.CalledProcessError as exc:
         logging.warning('{}: EXCEPTION cmd={} rc={} output={}'
                         .format(machine, exc.cmd, exc.returncode, exc.output))
         output['messages'].append(exc.output)
         output.update({'0.report': []})
         MODULE.exit_json(changed=CHANGED, msg='error executing flrtvc', meta=output)
+
     except OSError as exc:
         logging.warning('{}: EXCEPTION cmd={} Exception={}'
                         .format(machine, cmd, exc))
@@ -869,14 +892,18 @@ def exec_cmd(cmd, output, exit_on_error=False, shell=False):
     Note: If executed in thread, fail_json does not exit the parent
 
     args:
-        cmd           (list): command with parameters
+        cmd           (list or str): command with parameters
         output        (dict): result of the command to display in case of exception
-        exit_on_error (bool): use exit_json if set and cmd failed
-        shell         (bool): execute cmd through the shell if set (security hazard)
-
+        exit_on_error (bool): use fail_json if set and cmd failed
+        shell         (bool): execute cmd through the shell if set (vulnerable to shell
+                              injection when cmd is from user inputs). If cmd is a string
+                              string, the string specifies the command to execute through
+                              the shell. If cmd is a list, the first item specifies the
+                              command, and other items are arguments to the shell itself.
     return:
         res      return code of the command
-        stdout   command output (stdout and stderr)
+        stdout   command stdout
+        errout   command stderr
     """
     global MODULE
     global CHANGED
@@ -891,20 +918,26 @@ def exec_cmd(cmd, output, exit_on_error=False, shell=False):
         myfile = open(stderr_file, 'w')
         stdout = subprocess.check_output(cmd, stderr=myfile, shell=shell)
         myfile.close()
-        stdout = re.sub(r'[-\d]+\n$', '', stdout)  # remove the rc
+        s = re.search(r'rc=([-\d]+)$', stdout)
+        if s:
+            res = int(s.group(1))
+            stdout = re.sub(r'rc=[-\d]+\n$', '', stdout)  # remove the rc of c_rsh with echo $?
+
     except subprocess.CalledProcessError as exc:
-        # exception for ret_code != 0 can be cached if exit_on_error is False
         myfile.close()
-        stdout = re.sub(r'[-\d]+\n$', '', exc.stdout)  # remove the rc
+        errout = re.sub(r'rc=[-\d]+\n$', '', exc.stdout)  # remove the rc of c_rsh with echo $?
         res = exc.returncode
-        if exit_on_error is True:
-            msg = 'Error executing command {} RetCode:{} ... Error:{}'\
-                  .format(exc.cmd, res, stdout)
-            MODULE.fail_json(changed=CHANGED, msg=msg, meta=output)
-    except (IOError, OSError) as exc:
+
+    except OSError as exc:
+        myfile.close
+        errout = re.sub(r'rc=[-\d]+\n$', '', exc.args[1])  # remove the rc of c_rsh with echo $?
+        res = exc.args[0]
+
+    except IOError as exc:
         # generic exception
+        myfile.close
         msg = 'Command: {} Exception: {}'.format(cmd, exc)
-        MODULE.exit_json(changed=CHANGED, msg=msg, meta=output)
+        MODULE.fail_json(changed=CHANGED, msg=msg, meta=output)
 
     # check for error message
     if os.path.getsize(stderr_file) > 0:
@@ -912,6 +945,11 @@ def exec_cmd(cmd, output, exit_on_error=False, shell=False):
         errout += ''.join(myfile)
         myfile.close()
     os.remove(stderr_file)
+
+    if res != 0 and exit_on_error is True:
+        msg = 'Error executing command {} RetCode:{} ... stdout:{} stderr:{}'\
+              .format(cmd, res, stdout, errout)
+        MODULE.fail_json(changed=CHANGED, msg=msg, meta=output)
 
     return (res, stdout, errout)
 
@@ -933,9 +971,7 @@ def client_list():
     try:
         cmd = ['lsnim', '-c', 'machines', '-l']
         stdout = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-        # cmd = ['lsnim', '-t', 'vios', '-l']
-        # stdout2 = subprocess.check_output(args=cmd, stderr=subprocess.STDOUT)
-        # stdout = stdout + "\n" + stdout2
+
     except subprocess.CalledProcessError as exc:
         logging.warning('EXCEPTION cmd={} rc={} output={}'
                         .format(exc.cmd, exc.returncode, exc.output))
@@ -1052,12 +1088,12 @@ def check_targets(targets_list, nim_clients, output):
             continue
 
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '"/usr/bin/ls; echo $?"']
+               '"/usr/bin/ls; echo rc=$?"']
         (res, stdout, stderr) = exec_cmd(cmd, output)
         if res == 0:
             targets.append(machine)
         else:
-            msg = 'Cannot reach {} with c_rsh: {}, {} {}'\
+            msg = 'Cannot reach {} with c_rsh: {}, {}, {}'\
                   .format(machine, res, stdout, stderr)
             logging.warning(msg)
             output[machine].update({'0.report': msg})
@@ -1147,7 +1183,7 @@ if __name__ == '__main__':
     for MACHINE in TARGETS:
         OUTPUT[MACHINE] = {'messages': []}  # first time init
 
-    # check connecivity
+    # check connectivity
     TARGETS = check_targets(TARGETS, NIM_CLIENTS, OUTPUT)
     logging.debug('Available target machines are:{}'.format(TARGETS))
     if not TARGETS:

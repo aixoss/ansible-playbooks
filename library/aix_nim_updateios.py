@@ -17,8 +17,10 @@
 ############################################################################
 """AIX VIOS NIM Update: tools to update a list of one or a pair of VIOSes"""
 
+import os
 import re
 import subprocess
+import threading
 import logging
 import time
 
@@ -30,7 +32,7 @@ DOCUMENTATION = """
 ---
 module: aix_nim_updateios
 authors: Alain Poncet, Patrice Jacquin, Vianney Robin
-short_description: Perform a VIO update with NIM
+short_description: Perform a VIOS update with NIM
 """
 
 
@@ -39,53 +41,84 @@ short_description: Perform a VIO update with NIM
 def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
     """
     Execute the given command
+
+    Note: If executed in thread, fail_json does not exit the parent
+
+    args:
         - cmd           array of the command parameters
         - module        the module variable
-        - exit_on_error exception is raised if true and cmd return !0
+        - exit_on_error use fail_json if true and cmd return !0
         - debug_data    prints some trace in DEBUG_DATA if set
-        - shell         execute cmd through the shell if set (security hazard)
-
+        - shell         execute cmd through the shell if set (vulnerable to shell
+                        injection when cmd is from user inputs). If cmd is a string
+                        string, the string specifies the command to execute through
+                        the shell. If cmd is a list, the first item specifies the
+                        command, and other items are arguments to the shell itself.
     return
-        - ret_code  (return code of the command)
-        - output   output of the command
+        - ret    return code of the command
+        - output output and stderr of the command
+        - errout command stderr
     """
 
     global DEBUG_DATA
+    global CHANGED
+    global OUTPUT
 
-    ret_code = 0
+    ret = 0
     output = ''
+    errout = ''
+
+    th_id = threading.current_thread().ident
+    stderr_file = '/tmp/ansible_updateios_cmd_stderr_{}'.format(th_id)
 
     logging.debug('exec command:{}'.format(cmd))
     if debug_data is True:
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=shell)
-        output = re.sub(r'[-\d]+\n$', '', output)  # remove the rc
+        myfile = open(stderr_file, 'w')
+        output = subprocess.check_output(cmd, stderr=myfile, shell=shell)
+        myfile.close()
+        s = re.search(r'rc=([-\d]+)$', output)
+        if s:
+            ret = int(s.group(1))
+            output = re.sub(r'rc=[-\d]+\n$', '', output)  # remove the rc of c_rsh with echo $?
 
     except subprocess.CalledProcessError as exc:
-        # exception for ret_code != 0 can be cached if exit_on_error is set
-        output = re.sub(r'[-\d]+\n$', '', exc.output)  # remove the rc
-        ret_code = exc.returncode
-        if exit_on_error is True:
-            msg = 'Command: {} RetCode:{} ... Error:{}'\
-                  .format(exc.cmd, ret_code, output)
-            module.fail_json(msg=msg)
+        myfile.close()
+        errout = re.sub(r'rc=[-\d]+\n$', '', exc.stdout)  # remove the rc of c_rsh with echo $?
+        ret = exc.returncode
 
     except OSError as exc:
+        myfile.close()
+        errout = re.sub(r'rc=[-\d]+\n$', '', exc.args[1])  # remove the rc of c_rsh with echo $?
+        ret = exc.args[0]
+
+    except IOError as exc:
         # generic exception
-        msg = 'Command: {} Exception: {}'.format(cmd, exc)
-        module.fail_json(msg=msg)
+        myfile.close()
+        errout = 'Command: {} Exception: {}'.format(cmd, exc)
+        ret = 1
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
 
-    if ret_code == 0:
-        if debug_data is True:
-            DEBUG_DATA.append('exec output:{}'.format(output))
-        logging.debug('exec command output:{}'.format(output))
-    else:
-        if debug_data is True:
-            DEBUG_DATA.append('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
-        logging.debug('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
+    # check for error message
+    if os.path.getsize(stderr_file) > 0:
+        myfile = open(stderr_file, 'r')
+        errout += ''.join(myfile)
+        myfile.close()
+    os.remove(stderr_file)
 
-    return (ret_code, output)
+    if debug_data is True:
+        DEBUG_DATA.append('exec command rc:{}, output:{} errout:{}'
+                          .format(ret, output, errout))
+        logging.debug('exec command rc:{}, output:{} errout:{}'
+                      .format(ret, output, errout))
+
+    if ret != 0 and exit_on_error is True:
+        msg = 'Command: {} RetCode:{} ... stdout:{} stderr:{}'\
+              .format(cmd, ret, output, errout)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
+
+    return (ret, output, errout)
 
 
 # ----------------------------------------------------------------
@@ -98,14 +131,17 @@ def get_nim_clients_info(module, lpar_type):
     return the list of the name of the lpar objects defined on the
            nim master and their associated cstate value
     """
+    global CHANGED
+    global OUTPUT
     std_out = ''
     info_hash = {}
 
-    cmd = ['LC_ALL=C lsnim', '-t', lpar_type, '-l']
-    (ret, std_out) = exec_cmd(cmd, module)
+    cmd = 'LC_ALL=C lsnim -t {} -l'.format(lpar_type)
+    (ret, std_out, std_err) = exec_cmd(cmd, module, shell=True)
     if ret != 0:
-        logging.error('Cannot list NIM {} objects'.format(lpar_type))
-        module.fail_json(msg="Error: Cannot list NIM {} objects".format(lpar_type))
+        msg = 'Cannot list NIM {} objects: {}'.format(lpar_type, std_err)
+        logging.error(msg)
+        module.fail_json(changed=CHANGED, msg=msg, meta=OUTPUT)
 
     # lpar name and associated Cstate
     obj_key = ""
@@ -183,24 +219,29 @@ def check_lpp_source(module, lpp_source):
     return
         - exists        True
     """
+    global OUTPUT
+    global CHANGED
 
     # find location of lpp_source
     cmd = ['lsnim', '-a', 'location', lpp_source]
-    (ret, std_out) = exec_cmd(cmd, module)
+    (ret, std_out, std_err) = exec_cmd(cmd, module)
     if ret != 0:
-        logging.error('Cannot find location of lpp_source {}'.format(lpp_source))
-        module.fail_json(msg="NIM - Error: cannot find location of lpp_source {}"
-                         .format(lpp_source))
+        msg = 'Cannot find location of lpp_source {}, lsnim returns: {}'\
+              .format(lpp_source, std_err)
+        logging.error(msg)
+        OUTPUT.append(msg)
+        module.fail_json(changed=CHANGED, msg=msg, meta=OUTPUT)
     location = std_out.split()[3]
 
     # check to make sure path exists
-    cmd = ['/bin/find/', location]
-    (ret, std_out) = exec_cmd(cmd, module)
+    cmd = ['/bin/find', location]
+    (ret, std_out, std_err) = exec_cmd(cmd, module)
     if ret != 0:
-        logging.error('Cannot find location of lpp_source {}'
-                      .format(lpp_source))
-        module.fail_json(msg="NIM - Error: cannot find location of lpp_source {}"
-                         .format(lpp_source))
+        msg = 'Cannot find location of lpp_source {}: {}'\
+              .format(lpp_source, std_err)
+        logging.error(msg)
+        OUTPUT.append(msg)
+        module.fail_json(changed=CHANGED, msg=msg, meta=OUTPUT)
 
     return True
 
@@ -265,6 +306,21 @@ def check_vios_targets(module, targets):
             logging.warn(msg)
             continue
 
+        # check vios connectivity
+        res = 0
+        for elem in tuple_elts:
+            cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', elem,
+                   '"/usr/bin/ls; echo rc=$?"']
+            (ret, std_out, std_err) = exec_cmd(cmd, module)
+            if ret != 0:
+                res = 1
+                msg = 'skipping {}: cannot reach {} with c_rsh: {}, {}, {}'\
+                      .format(vios_tuple, elem, res, std_out, std_err)
+                logging.info(msg)
+                continue
+        if res != 0:
+            continue
+
         if tuple_len == 2:
             vios_list[tuple_elts[0]] = tuple_elts[1]
             vios_list[tuple_elts[1]] = tuple_elts[0]
@@ -307,15 +363,15 @@ def get_vios_ssp_status(module, target_tuple, vios_key, update_op_tab):
     for vios in target_tuple:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                NIM_NODE['nim_vios'][vios]['vios_ip'],
-               '"LC_ALL=C /usr/ios/cli/ioscli cluster -status -fmt : ; echo $?"']
-        (ret, std_out) = exec_cmd(cmd, module)
+               '"LC_ALL=C /usr/ios/cli/ioscli cluster -status -fmt : ; echo rc=$?"']
 
+        (ret, std_out, std_err) = exec_cmd(cmd, module)
         if ret != 0:
             update_op_tab[vios_key] = err_label
             OUTPUT.append('    Failed to get the SSP status for {}, cluster status returns: {}'
-                          .format(vios, std_out))
-            logging.error('Failed to get the SSP status for {}, cluster status returns: {} {}'
-                          .format(vios, ret, std_out))
+                          .format(vios, std_err))
+            logging.error('Failed to get the SSP status for {}, cluster status returns: {} {} {}'
+                          .format(vios, ret, std_out, std_err))
             return 1
 
         # check that the VIOSes belong to the same cluster and have the same satus
@@ -407,6 +463,7 @@ def ssp_stop_start(module, target_tuple, vios, action):
     """
 
     global NIM_NODE
+    global OUTPUT
 
     logging.debug("ssp_start_stop {},{},{}".format(target_tuple, vios, action))
     # if action is start SSP,  find the first node running SSP
@@ -423,15 +480,15 @@ def ssp_stop_start(module, target_tuple, vios, action):
 
     cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
            NIM_NODE['nim_vios'][node]['vios_ip'],
-           '"/usr/sbin/clctrl -{} -n {} -m {}; echo $?"'
+           '"/usr/sbin/clctrl -{} -n {} -m {}; echo rc=$?"'
            .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)]
-    (ret, std_out) = exec_cmd(cmd, module)
 
+    (ret, std_out, std_err) = exec_cmd(cmd, module)
     if ret != 0:
-        logging.error('Command: {} failed {} {}'.format(cmd, ret, std_out))
-        msg = 'Failed to {} cluster {} on vios {}'\
-              .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios)
-        logging.error("{}".format(msg))
+        msg = 'Failed to {} SSP cluster on {}: {}'\
+              .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios, std_err)
+        OUTPUT.append('    ' + msg)
+        logging.error(msg)
         return 1
 
     if action == "stop":
@@ -441,7 +498,6 @@ def ssp_stop_start(module, target_tuple, vios, action):
 
     logging.info('{} cluster {} on vios {} succeed'
                  .format(action, NIM_NODE['nim_vios'][vios]['ssp_name'], vios))
-
     return 0
 
 
@@ -454,8 +510,8 @@ def get_updateios_cmd(module):
     return
         - cmd           array of the command parameters
     """
-
     global OUTPUT
+    global CHANGED
 
     cmd = ['nim', '-o', 'updateios']
 
@@ -483,7 +539,7 @@ def get_updateios_cmd(module):
                   ' is mandatory with the "remove" action'
             logging.error('{}'.format(msg))
             OUTPUT.append('{}'.format(msg))
-            module.fail_json(msg=msg)
+            module.fail_json(changed=CHANGED, msg=msg, meta=OUTPUT)
     else:
         if module.params['filesets'] or module.params['installp_bundle']:
             logging.info('Discarding filesets {} and installp_bundle {}'
@@ -512,8 +568,8 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
     global OUTPUT
     global NIM_NODE
 
-    # build de cmd from the playbook parameters
-    cmd = get_updateios_cmd(module)
+    # build the updateios command from the playbook parameters
+    updateios_cmd = get_updateios_cmd(module)
 
     vios_key = []
     for target_tuple in targets_list:
@@ -571,9 +627,9 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
 
         # TBC - Begin: Uncomment for testing without effective update operation
         # OUTPUT.append('Warning: testing without effective update operation')
-        # OUTPUT.append('NIM Command: {} '.format(cmd))
+        # OUTPUT.append('NIM Command: {} '.format(updateios_cmd))
         # ret = 0
-        # std_out = 'NIM Command: {} '.format(cmd)
+        # std_out = 'NIM Command: {} '.format(updateios_cmd)
         # update_op_tab[vios_key] = "SUCCESS-UPDT"
         # continue
         # TBC - End
@@ -593,11 +649,11 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
                              .format(vios)
                 logging.debug('NIM - Command:{}'.format(cmd_commit))
 
-                (ret, std_out) = exec_cmd(cmd_commit, module, shell=True)
+                (ret, std_out, std_err) = exec_cmd(cmd_commit, module, shell=True)
 
                 if ret != 0:
-                    if std_out.find('There are no uncommitted updates') == -1:
-                        logging.warn('Failed {} {}'.format(cmd_commit, std_out))
+                    if std_err.find('There are no uncommitted updates') == -1:
+                        logging.warn('Failed {} {}'.format(cmd_commit, std_err))
                         msg = 'Failed to commit all applied lpps before the update on {}'\
                               .format(vios)
                         OUTPUT.append("{}".format(msg))
@@ -633,12 +689,14 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
 
             break_required = False
 
-            cmd_to_run = cmd + [vios]
-            (ret, std_out) = exec_cmd(cmd_to_run, module)
+            cmd = updateios_cmd + [vios]
+            (ret, std_out, std_err) = exec_cmd(cmd, module)
 
             if ret != 0:
-                logging.error('NIM Command: {} failed {} {}'.format(cmd_to_run, ret, std_out))
-                OUTPUT.append('    Failed to update VIOS {} with NIM: {}'.format(vios, cmd_to_run))
+                logging.error('NIM Command: {} failed rc:{} stdout:{} stderr:{}'
+                              .format(cmd, ret, std_out, std_err))
+                OUTPUT.append('    Failed to update VIOS {} with NIM: {} failed: {}'
+                              .format(vios, cmd, std_err))
                 update_op_tab[vios_key] = err_label
                 # in case of failure try to restart the SSP if needed
                 break_required = True

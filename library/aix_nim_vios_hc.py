@@ -20,6 +20,7 @@
 import os
 import re
 import subprocess
+import threading
 import logging
 # Ansible module 'boilerplate'
 from ansible.module_utils.basic import AnsibleModule
@@ -37,56 +38,85 @@ requirements: [ AIX ]
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def exec_cmd(cmd, module, exit_on_error=False, debug_data=True):
+def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
     """
     Execute the given command
+
+    Note: If executed in thread, fail_json does not exit the parent
+
+    args:
         - cmd           array of the command parameters
         - module        the module variable
         - exit_on_error execption is raised if true and cmd return !0
         - debug_data    prints some trace in DEBUG_DATA if set
-
-    In case of error set an error massage and fails the module
-
+        - shell         execute cmd through the shell if set (vulnerable to shell
+                        injection when cmd is from user inputs). If cmd is a string
+                        string, the string specifies the command to execute through
+                        the shell. If cmd is a list, the first item specifies the
+                        command, and other items are arguments to the shell itself.
     return
-        - ret_code  (return code of the command)
-        - output   output of the command
+        - ret     return code of the command
+        - output  output of the command
+        - errout  command stderr
     """
 
     global DEBUG_DATA
+    global CHANGED
+    global OUTPUT
 
-    ret_code = 0
+    ret = 0
     output = ''
+    errout = ''
+    th_id = threading.current_thread().ident
+    stderr_file = '/tmp/ansible_vios_check_cmd_stderr_{}'.format(th_id)
 
     logging.debug('exec command:{}'.format(cmd))
     if debug_data is True:
         DEBUG_DATA.append('exec command:{}'.format(cmd))
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+        myfile = open(stderr_file, 'w')
+        output = subprocess.check_output(cmd, stderr=myfile, shell=shell)
+        myfile.close()
+        s = re.search(r'rc=([-\d]+)$', output)
+        if s:
+            ret = int(s.group(1))
+            output = re.sub(r'rc=[-\d]+\n$', '', output)  # remove the rc of c_rsh with echo $?
 
     except subprocess.CalledProcessError as exc:
-        # exception for ret_code != 0 can be cached if exit_on_error is set
-        output = exc.output
-        ret_code = exc.returncode
-        if exit_on_error is True:
-            msg = 'Command: {} Exception.Args{} =>RetCode:{} ... Error:{}'\
-                  .format(cmd, exc.cmd, ret_code, output)
-            module.fail_json(msg=msg)
+        myfile.close()
+        errout = re.sub(r'rc=[-\d]+\n$', '', exc.output)  # remove the rc of c_rsh with echo $?
+        ret = exc.returncode
 
-    except Exception as exc:
+    except OSError as exc:
+        myfile.close
+        errout = re.sub(r'rc=[-\d]+\n$', '', exc.args[1])  # remove the rc of c_rsh with echo $?
+        ret = exc.args[0]
+
+    except IOError as exc:
         # uncatched exception
-        msg = 'Command: {} Exception.Args{}'.format(cmd, exc.args)
-        module.fail_json(msg=msg)
+        myfile.close
+        msg = 'Command: {} Exception: {}'.format(cmd, exc)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
 
-    if ret_code == 0:
-        if debug_data is True:
-            DEBUG_DATA.append('exec output:{}'.format(output))
-        logging.debug('exec command output:{}'.format(output))
-    else:
-        if debug_data is True:
-            DEBUG_DATA.append('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
-        logging.debug('exec command ret_code:{}, stderr:{}'.format(ret_code, output))
+    # check for error message
+    if os.path.getsize(stderr_file) > 0:
+        myfile = open(stderr_file, 'r')
+        errout += ''.join(myfile)
+        myfile.close()
+    os.remove(stderr_file)
 
-    return (ret_code, output)
+    if ret != 0 and exit_on_error is True:
+        msg = 'Error executing command {} RetCode:{} ... stdout:{} stderr:{}'\
+              .format(cmd, ret, output, errout)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
+
+    msg = 'exec command rc:{}, output:{}, stderr:{}'\
+          .format(ret, output, errout)
+    if debug_data is True:
+        DEBUG_DATA.append(msg)
+    logging.debug(msg)
+
+    return (ret, output, errout)
 
 
 # ----------------------------------------------------------------
@@ -102,8 +132,13 @@ def get_hmc_info(module):
     std_out = ''
     info_hash = {}
 
-    cmd = ['LC_ALL=C lsnim', '-t', 'hmc', '-l']
-    (ret, std_out) = exec_cmd(cmd, module)
+    cmd = 'LC_ALL=C lsnim -t hmc -l'
+    (ret, std_out, std_err) = exec_cmd(cmd, module, shell=True)
+    if ret != 0:
+        msg = 'Failed to get HMC NIM info, lsnim returns: {}'.format(std_err)
+        logging.error(msg)
+        OUTPUT.append(msg)
+        return info_hash
 
     obj_key = ''
     for line in std_out.split('\n'):
@@ -143,7 +178,8 @@ def get_hmc_info(module):
 # ----------------------------------------------------------------
 def get_nim_cecs_info(module):
     """
-    Get the list of the cec defined on the nim master and gat their serial number.
+    Get the list of the cec defined on the nim master and
+    get their serial number.
 
     return the list of the name of the cec objects defined on the
            nim master and their associated CEC serial number value
@@ -151,8 +187,13 @@ def get_nim_cecs_info(module):
     std_out = ''
     info_hash = {}
 
-    cmd = ['LC_ALL=C lsnim', '-t', 'cec', '-l']
-    (ret, std_out) = exec_cmd(cmd, module)
+    cmd = 'LC_ALL=C lsnim -t cec -l'
+    (ret, std_out, std_err) = exec_cmd(cmd, module, shell=True)
+    if ret != 0:
+        msg = 'Failed to get CEC NIM info, lsnim returns: {}'.format(std_err)
+        logging.error(msg)
+        OUTPUT.append(msg)
+        return info_hash
 
     # lpar name and associated Cstate
     obj_key = ""
@@ -185,8 +226,13 @@ def get_nim_clients_info(module, lpar_type):
     std_out = ''
     info_hash = {}
 
-    cmd = ['LC_ALL=C lsnim', '-t', lpar_type, '-l']
-    (ret, std_out) = exec_cmd(cmd, module)
+    cmd = 'LC_ALL=C lsnim -t {} -l'.format(lpar_type)
+    (ret, std_out, std_err) = exec_cmd(cmd, module, shell=True)
+    if ret != 0:
+        msg = 'Failed to get NIM clients info, lsnim returns: {}'.format(std_err)
+        logging.error(msg)
+        OUTPUT.append(msg)
+        return info_hash
 
     # lpar name and associated Cstate
     obj_key = ""
@@ -269,9 +315,10 @@ def build_nim_node(module):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def check_vios_targets(targets):
+def check_vios_targets(module, targets):
     """
     check the list of the vios targets.
+    check that each target can be reached.
 
     a target name could be of the following form:
         (vios1, vios2) (vios3)
@@ -313,8 +360,23 @@ def check_vios_targets(targets):
         # check vios is known by the NIM master - if not ignore it
         if tuple_elts[0] not in NIM_NODE['nim_vios'] or \
            (tuple_len == 2 and tuple_elts[1] not in NIM_NODE['nim_vios']):
-            logging.debug('skipping {} as VIOS not known by the NIM master.'
-                          .format(vios_tuple))
+            logging.info('skipping {} as VIOS not known by the NIM master.'
+                         .format(vios_tuple))
+            continue
+
+        # check vios connectivity
+        res = 0
+        for elem in tuple_elts:
+            cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', elem,
+                   '"/usr/bin/ls; echo rc=$?"']
+            (ret, std_out, std_err) = exec_cmd(cmd, module)
+            if ret != 0:
+                res = 1
+                msg = 'skipping {}: cannot reach {} with c_rsh: {}, {}, {}'\
+                      .format(vios_tuple, elem, res, std_out, std_err)
+                logging.info(msg)
+                continue
+        if res != 0:
             continue
 
         if tuple_len == 2:
@@ -360,12 +422,12 @@ def vios_health(module, mgmt_sys_uuid, hmc_ip, vios_uuids):
     if VERBOSITY >= 3:
         cmd.extend(['-D'])
 
-    (ret, std_out) = exec_cmd(cmd, module)
+    (ret, std_out, std_err) = exec_cmd(' '.join(cmd), module, shell=True)
     if ret != 0:
-        OUTPUT.append('    VIOS Health check failed, vioshc returns: {} {}'
-                      .format(ret, std_out))
+        OUTPUT.append('    VIOS Health check failed, vioshc returns: {}'
+                      .format(std_err))
         logging.error('VIOS Health check failed, vioshc returns: {} {}'
-                      .format(ret, std_out))
+                      .format(ret, std_err))
         OUTPUT.append('    VIOS can NOT be updated')
         logging.info('vioses {} can NOT be updated'.format(vios_uuids))
         ret = 1
@@ -396,6 +458,8 @@ def vios_health_init(module, hmc_id, hmc_ip):
             False else
     """
     global NIM_NODE
+    global CHANGED
+    global OUTPUT
 
     logging.debug('hmc_id: {}, hmc_ip: {}'.format(hmc_id, hmc_ip))
 
@@ -413,15 +477,15 @@ def vios_health_init(module, hmc_id, hmc_ip):
     if VERBOSITY >= 3:
         cmd.extend(['-D'])
 
-    (ret, std_out) = exec_cmd(cmd, module)
+    (ret, std_out, std_err) = exec_cmd(' '.join(cmd), module, shell=True)
     if ret != 0:
-        OUTPUT.append('    Failed to get the VIOS information, vioshc returns: {} {}'
-                      .format(ret, std_out))
+        OUTPUT.append('    Failed to get the VIOS information, vioshc returns: {}'
+                      .format(std_err))
         logging.error('Failed to get the VIOS information, vioshc returns: {} {}'
-                      .format(ret, std_out))
-        msg = 'Health init check failed. vioshc command error. rc:{}, error: {}'\
-              .format(ret, std_out)
-        module.fail_json(msg=msg)
+                      .format(ret, std_err))
+        msg = 'Health init check failed. vioshc command error. rc:{}, stdout: {} stderr: {}'\
+              .format(ret, std_out, std_err)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
 
     # Parse the output and store the UUIDs
     data_start = 0
@@ -493,7 +557,7 @@ def vios_health_init(module, hmc_id, hmc_ip):
         logging.error('vioshc command, bad output line: {}'.format(line))
         msg = 'Health init check failed. Bad vioshc.py command output for the {} hmc - output: {}'\
               .format(hmc_id, line)
-        module.fail_json(msg=msg)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
 
     logging.debug('vioshc output: {}'.format(line))
     return ret
@@ -656,7 +720,7 @@ if __name__ == '__main__':
     # =========================================================================
     build_nim_node(module)
 
-    ret = check_vios_targets(targets)
+    ret = check_vios_targets(module, targets)
     if (ret is None) or (not ret):
         OUTPUT.append('    Warning: Empty target list')
         logging.warn('Empty target list: "{}"'.format(targets))

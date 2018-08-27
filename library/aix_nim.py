@@ -57,7 +57,7 @@ def run_oslevel_cmd(machine, result):
     else:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                machine,
-               '"/usr/bin/oslevel -s; echo $?"']
+               '"/usr/bin/oslevel -s; echo rc=$?"']
     try:
         proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
@@ -66,6 +66,10 @@ def run_oslevel_cmd(machine, result):
         logging.debug('{} oslevel stdout: "{}"'.format(machine, std_out))
         if std_err.rstrip():
             logging.warning('"{}" command stderr: {}'.format(' '.join(cmd), std_err))
+
+        # remove the rc of c_rsh with echo $?
+        if machine != 'master':
+            std_out = re.sub(r'rc=[-\d]+\n$', '', std_out)
 
         # return stdout only ... stripped!
         result[machine] = std_out.rstrip()
@@ -78,13 +82,18 @@ def run_oslevel_cmd(machine, result):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def exec_cmd(cmd, module):
+def exec_cmd(cmd, module, shell=False):
     """
     Execute the given command
         - cmd     array of the command parameters
         - module  the module variable
+        - shell   execute cmd through the shell if set (vulnerable to shell
+                  injection when cmd is from user inputs). If cmd is a string
+                  string, the string specifies the command to execute through
+                  the shell. If cmd is a list, the first item specifies the
+                  command, and other items are arguments to the shell itself.
 
-    In case of erro set an error massage and fails the module
+    In case of error set an error message and fails the module
 
     return
         - ret_code  (0)
@@ -93,30 +102,23 @@ def exec_cmd(cmd, module):
 
     global DEBUG_DATA
     std_out = ''
-    std_err = ''
 
     logging.debug('exec command:{}'.format(cmd))
     try:
-        std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        std_out = re.sub(r'[-\d]+\n$', '', std_out)  # remove the rc
-    except subprocess.CalledProcessError as exc:
-        std_out = re.sub(r'[-\d]+\n$', '', exc.output)  # remove the rc
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
-              .format(cmd, exc.cmd, std_out, exc.returncode)
-        module.fail_json(msg=msg)
-    except Exception as exc:
-        msg = 'Command: {} Exception.Args{} =>Data:{} ... Error :{}'\
-              .format(cmd, exc.args, std_out, std_err)
-        module.fail_json(msg=msg)
+        std_out = subprocess.check_output(cmd,
+                                          stderr=subprocess.STDOUT,
+                                          shell=shell)
 
-    #########################################################
-    # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG # DEBUG #
-    #########################################################
+    except subprocess.CalledProcessError as exc:
+        module.fail_json(msg='Command: {} Exception: {}'.format(cmd, exc))
+
+    except Exception as exc:
+        module.fail_json(msg='Command: {} Exception: {} =>Data:{}'
+                         .format(cmd, exc, std_out))
+
+    # DEBUG
     DEBUG_DATA.append('exec command:{}'.format(cmd))
-    DEBUG_DATA.append('exec command Error:{}'.format(std_err))
-    logging.debug('exec command Error:{}'.format(std_err))
-    logging.debug('exec command output:{}'.format(std_out))
-    # --------------------------------------------------------
+    logging.debug('exec  command out:{}'.format(std_out))
 
     return (0, std_out)
 
@@ -276,12 +278,11 @@ def get_nim_lpp_source(module):
         std_out of the command or stderr in case of error
     """
     std_out = ''
-    # std_err = ''
     lpp_source_list = {}
 
-    cmd = ['lsnim', '-t', 'lpp_source', '-l']
+    cmd = ['LC_ALL=C lsnim', '-t', 'lpp_source', '-l']
 
-    ret, std_out = exec_cmd(cmd, module)
+    ret, std_out = exec_cmd(' '.join(cmd), module, True)
 
     if ret != 0:
         return ret, std_out
@@ -692,7 +693,8 @@ def list_fixes(target, module):
     if target == 'master':
         cmde = 'LC_ALL=C /usr/sbin/emgr -l'
     else:
-        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} "LC_ALL=C /usr/sbin/emgr -l; echo $?"'\
+        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '\
+               '"LC_ALL=C /usr/sbin/emgr -l; echo rc=$?"'\
                .format(target)
     logging.debug('EMGR list - Command:{}'.format(cmde))
 
@@ -700,6 +702,14 @@ def list_fixes(target, module):
 
     logging.info("[STDOUT] {}".format(stdout))
     logging.info("[STDERR] {}".format(stderr))
+
+    # remove the rc of c_rsh with echo $?
+    if target != 'master':
+        s = re.search(r'rc=([-\d]+)$', stdout)
+        if s:
+            if ret == 0:
+                ret = int(s.group(1))
+            stdout = re.sub(r'rc=[-\d]+\n$', '', stdout)
 
     for line in stdout.rstrip().split('\n'):
         line = line.rstrip()
@@ -735,7 +745,8 @@ def remove_fix(target, fix, module):
     if target == 'master':
         cmde = '/usr/sbin/emgr -r -L {}'.format(fix)
     else:
-        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} "/usr/sbin/emgr -r -L {}; echo $?"'\
+        cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '\
+               '"/usr/sbin/emgr -r -L {}; echo rc=$?"'\
                .format(target, fix)
     logging.debug('EMGR remove - Command:{}'.format(cmde))
 
@@ -743,6 +754,15 @@ def remove_fix(target, fix, module):
 
     logging.info("[STDOUT] {}".format(stdout))
     logging.info("[STDERR] {}".format(stderr))
+
+    # remove the rc of c_rsh with echo $?
+    if target != 'master':
+        s = re.search(r'rc=([-\d]+)$', stdout)
+        if s:
+            if ret == 0:
+                ret = int(s.group(1))
+            stdout = re.sub(r'rc=[-\d]+\n$', '', stdout)
+
     NIM_OUTPUT.append('{}'.format(stderr))
 
     if ret != 0:
@@ -961,7 +981,7 @@ def nim_maintenance(module):
         else:
             cmde = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                     target,
-                    '"/usr/sbin/installp -c all; echo $?"']
+                    '"/usr/sbin/installp -c all; echo rc=$?"']
 
         logging.debug('NIM - Command:{}'.format(cmde))
         NIM_OUTPUT.append('NIM - Command:{}'.format(cmde))
@@ -971,6 +991,15 @@ def nim_maintenance(module):
         logging.info("[RC] {}".format(ret))
         logging.info("[STDOUT] {}".format(stdout))
         logging.info("[STDERR] {}".format(stderr))
+
+        # remove the rc of c_rsh with echo $?
+        if target not in NIM_NODE['standalone']:
+            s = re.search(r'rc=([-\d]+)$', stdout)
+            if s:
+                if ret == 0:
+                    ret = int(s.group(1))
+                stdout = re.sub(r'rc=[-\d]+\n$', '', stdout)
+
         NIM_OUTPUT.append('{}'.format(stderr))
 
         NIM_OUTPUT.append('NIM - Finish Commiting {}.'.format(target))

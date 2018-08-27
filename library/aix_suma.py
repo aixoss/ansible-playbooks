@@ -96,7 +96,7 @@ def run_cmd(machine, result):
     else:
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh',
                machine,
-               '"/usr/bin/oslevel -s; echo $?"']
+               '"/usr/bin/oslevel -s"']
 
     proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
@@ -183,41 +183,48 @@ def expand_targets(targets_list, nim_clients):
 
 # ----------------------------------------------------------------
 # ----------------------------------------------------------------
-def exec_cmd(cmd):
+def exec_cmd(cmd, shell=False):
     """Execute a command.
 
     arguments:
-        cmd (str): The command to be executed
+        cmd    (str): The command to be executed
+        shell (bool): execute cmd through the shell if set (vulnerable to shell
+                      injection when cmd is from user inputs). If cmd is a string
+                      string, the string specifies the command to execute through
+                      the shell. If cmd is a list, the first item specifies the
+                      command, and other items are arguments to the shell itself.
 
     return:
         ret code: 0 - OK
                   1 - CalledProcessError exception
                   2 - other exception
-        std_out of the command or stderr in case of error
+        both stdout and stderr of the command
     """
-
-    std_out = ''
-    std_err = ''
-    msg = ''
+    out = ''
 
     logging.debug("exec command:{}".format(cmd))
     try:
-        std_out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-        std_out = re.sub(r'[-\d]+\n$', '', std_out)  # remove the rc
-    except subprocess.CalledProcessError as excep:
-        std_out = re.sub(r'[-\d]+\n$', '', excep.output)  # remove the rc
-        msg = "Command: {} Exception.Args{} =>Data:{} ... Error :{}"\
-              .format(cmd, excep.cmd, std_out, excep.returncode)
-        return 1, msg
-    except Exception as excep:
-        msg = "Command: {} Exception.Args{} =>Data:{} ... Error :{}"\
-              .format(cmd, excep.args, std_out, std_err)
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, shell=shell)
+
+    except subprocess.CalledProcessError as exc:
+        logging.debug("exec command rc:{} out:{}"
+                      .format(exc.returncode, exc.stdout))
+        return exc.returncode, exc.stdout
+
+    except OSError as exc:
+        logging.debug("exec command rc:{} out:{}"
+                      .format(exc.args[0], exc.args))
+        return exc.args[0], exc.args
+
+    except Exception as exc:
+        msg = "Command: {} Exception:{} =>Data:{}"\
+              .format(cmd, exc, out)
+        logging.debug("exec command rc:2 out:{}".format(msg))
         return 2, msg
 
-    logging.debug("exec command Error:{}".format(std_err))
-    logging.debug("exec command output:{}".format(std_out))
+    logging.debug("exec command rc:0 out:{}".format(out))
 
-    return 0, std_out
+    return 0, out
 
 
 # ----------------------------------------------------------------
@@ -271,14 +278,16 @@ def get_nim_lpp_source():
                 value = lpp source location
     """
     std_out = ''
-    # std_err = ''
     lpp_source_list = {}
 
     cmd = ['LC_ALL=C lsnim', '-t', 'lpp_source', '-l']
 
-    ret, std_out = exec_cmd(cmd)
+    logging.debug("SUMA command:{}".format(cmd))
 
+    ret, std_out = exec_cmd(' '.join(cmd), shell=True)
     if ret != 0:
+        logging.error("SUMA command error rc:{}, error: {}"
+                      .format(ret, std_out))
         return ret, std_out
 
     # lpp_source list
@@ -396,7 +405,7 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
 
         logging.debug("SUMA command:{}".format(cmd))
 
-        ret, stdout = exec_cmd(cmd)
+        ret, stdout = exec_cmd(' '.join(cmd), shell=True)
         if ret != 0:
             logging.error("SUMA command error rc:{}, error: {}"
                           .format(ret, stdout))
@@ -456,7 +465,7 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
 
             logging.debug("suma command: {}".format(cmd))
 
-            ret, stdout = exec_cmd(cmd)
+            ret, stdout = exec_cmd(' '.join(cmd), shell=True)
             if ret != 0:
                 logging.error("SUMA command error rc:{}, error: {}"
                               .format(ret, stdout))
