@@ -343,7 +343,7 @@ def check_vios_targets(module, targets):
         res = 0
         for elem in tuple_elts:
             cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', elem,
-                   '"/usr/bin/ls; echo rc=$?"']
+                   '"/usr/bin/ls /dev/null; echo rc=$?"']
             (ret, std_out, std_err) = exec_cmd(cmd, module)
             if ret != 0:
                 logging.info('skipping {}: cannot reach {} with c_rsh: {}, {}, {}'

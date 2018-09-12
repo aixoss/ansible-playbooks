@@ -1088,7 +1088,7 @@ def check_targets(targets_list, nim_clients, output):
             continue
 
         cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', machine,
-               '"/usr/bin/ls; echo rc=$?"']
+               '"/usr/bin/ls /dev/null; echo rc=$?"']
         (res, stdout, stderr) = exec_cmd(cmd, output)
         if res == 0:
             targets.append(machine)
