@@ -17,6 +17,7 @@
 ############################################################################
 """AIX VIOS NIM Upgrade: tools to upgrade a list of one or a pair of VIOSes"""
 
+import os
 import re
 import subprocess
 import logging
@@ -24,8 +25,6 @@ import time
 import threading
 
 # Ansible module 'boilerplate'
-# pylint: disable=wildcard-import,unused-wildcard-import,redefined-builtin
-# TODO: VRO test import AnsibleModule, I think it has been tested before but want to be sure.
 from ansible.module_utils.basic import AnsibleModule
 
 
@@ -41,7 +40,6 @@ short_description: Perform a VIOS upgrade with NIM
 # TODO: Later, add cluster support for viosbr restore
 
 # TODO: VRO Check message indentation in OUTPUT
-# TODO: VRO Check all function comments
 # TODO: VRO Check if can get debug level from ANSIBLE_DEBUG env var to export NIM_DEBUG=1
 # TODO: VRO Check if all debug section (TBC) are commented before commit
 # TODO: VRO -----------------------------------------------------------------------------
@@ -56,22 +54,19 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
     Note: If executed in thread, fail_json does not exit the parent
 
     args:
-        - cmd           array of the command parameters
-        - module        the module variable
-        - exit_on_error execption is raised if true and cmd return !0
-        - debug_data    prints some trace in DEBUG_DATA if set
-        - shell         execute cmd through the shell if set (vulnerable to shell
-                        injection when cmd is from user inputs). If cmd is a string
-                        string, the string specifies the command to execute through
-                        the shell. If cmd is a list, the first item specifies the
-                        command, and other items are arguments to the shell itself.
-
-    In case of error set an error massage and fails the module
-
-    return
-        - ret    return code of the command
-        - output output and stderr of the command
-        - errout command stderr
+        cmd           array of the command parameters
+        module        the Ansible module
+        exit_on_error an exception is raised if true and cmd return !0
+        debug_data    prints some trace in DEBUG_DATA if set
+        shell         execute cmd through the shell if set (vulnerable to shell
+                      injection when cmd is from user inputs). If cmd is a string
+                      string, the string specifies the command to execute through
+                      the shell. If cmd is a list, the first item specifies the
+                      command, and other items are arguments to the shell itself.
+    return:
+        ret    return code of the command
+        output output and stderr of the command
+        errout command stderr
     """
 
     global DEBUG_DATA
@@ -99,7 +94,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
 
     except subprocess.CalledProcessError as exc:
         myfile.close()
-        errout = re.sub(r'rc=[-\d]+\n$', '', exc.stdout)  # remove the rc of c_rsh with echo $?
+        errout = re.sub(r'rc=[-\d]+\n$', '', exc.output)  # remove the rc of c_rsh with echo $?
         ret = exc.returncode
 
     except OSError as exc:
@@ -110,7 +105,7 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
     except IOError as exc:
         # generic exception
         myfile.close()
-        errout = 'Command: {} Exception: {}'.format(cmd, exc)
+        msg = 'Command: {} Exception: {}'.format(cmd, exc)
         ret = 1
         module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
 
@@ -139,11 +134,16 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
 # ----------------------------------------------------------------
 def get_nim_clients_info(module, lpar_type):
     """
-    Get the list of the lpar (standalones or vios) defined on the nim master, and get their
-    cstate.
+    Get the list of the lpar (standalones or vios) defined on the
+    nim master, and get their cstate.
 
-    return the list of the name of the lpar objects defined on the
-           nim master and their associated cstate value
+    args:
+        module    the Ansible module
+        lpar_type type of partition: 'standalones' or 'vios'
+
+    return:
+        the list of the name of the lpar objects defined on the
+        nim master and their associated cstate value
     """
     info_hash = {}
 
@@ -200,14 +200,12 @@ def check_vios_targets(module, targets):
     """
     check the list of the vios targets.
 
-    a target name could be of the following form:
-        (vios1, vios2) (vios3)
-
-    arguments:
-        targets (str) : list of tuple of NIM name of vios machine
-        module  (hash): the module variable
-
-    return: the list of the existing vios tuple matching the target list
+    args:
+        module  the Ansible module
+        targets list of tuple of NIM name of vios machine, could be
+                of the following form: (vios1, vios2) (vios3)
+    return:
+        the list of the existing vios tuple matching the target list
     """
     vios_list = {}
     vios_list_tuples_res = []
@@ -271,11 +269,15 @@ def check_vios_targets(module, targets):
 def nim_set_infofile(module):
     """
     Additional settings in NIM master's /etc/niminfo file
-        - module        the module variable
-    module.param used
-        - email (optional)
-    return
-        - cmd           array of the command parameters
+
+    args:
+        module the Ansible module
+
+    module.param used:
+        email (optional)
+
+    return:
+        0 if success, 1 otherwise
     """
     global CHANGED
     global OUTPUT
@@ -316,14 +318,18 @@ def nim_set_infofile(module):
 def nim_backup(module):
     """
     Perform a NIM operation to create a backup for each VIOSes
-        - module        the module variable
-    module.param used
-        - vios_status   (optional)
-        - location      (optional)
-        - backup_prefix (optional) to build the name of the backup
-    return
-        - number of errors if any
-        - set module.status[<target_uple>] with the status
+
+    args:
+        module   the module variable
+
+    module.param used:
+        vios_status   (optional)
+        location      (optional)
+        backup_prefix (optional) to build the name of the backup
+
+    return:
+        error_nb number of errors if any
+        set module.status[<target_uple>] with the status
     """
     global CHANGED
     global OUTPUT
@@ -438,15 +444,19 @@ def nim_backup(module):
 def nim_viosbr(module):
     """
     Perform a NIM operation to view or restore backup
-    information for each VIOSes
-        - module        the module variable
-    module.param used
-        - vios_status   (optional)
-        - action        (only view_backup, restore_backup are supported here)
-        - backup_prefix (optional) to build the name of the backup
-    return
-        - number of errors if any
-        - set module.status[<target_uple>] with the status
+    (depending on module.params['action'] value)
+
+    args:
+        module   the module variable
+
+    module.param used:
+        vios_status   (optional)
+        action        (only view_backup, restore_backup are supported here)
+        backup_prefix (optional) to build the name of the backup
+
+    return:
+        error_nb number of errors if any
+        set module.status[<target_uple>] with the status
     """
     global CHANGED
     global OUTPUT
@@ -609,9 +619,12 @@ class MigviosThread(threading.Thread):
 # TODO: VRO test nim_migvios_all function
 def nim_migvios_all(module):
     """
-    Execute the migvios command for first vios of tuples, wait
-    for completion, if succeeded execute the migvios command for
-    second vios and wait for completion.
+    Execute the migvios command on the first vios of each tuples,
+    wait for completion, if succeeded execute the migvios command
+    for second vios and wait for completion.
+
+    args:
+        module  the Ansible module
     """
     global CHANGED
     global OUTPUT
@@ -649,12 +662,20 @@ def nim_migvios_tuple(module, target_tuple, stop_event):
     Handle the migvios execution in a thread for the tuple.
     Watch for stop_event (set by join() if time_limit is reached).
 
-    module.param used
-        - vios_status (optional)
-    return
+    args:
+        module        the Ansible module
+        target_tuple  tuple of target to run migvios can be
+                      (vios1,vios2) or (vios1)
+        stop_event    flag set if we reached time_limit
+
+    module.param used:
+        action      (for logging only)
+        vios_status (optional)
+
+    return:
         -1 if timed out (stop_event set),
         0  if migvios succeeded,
-        1  if migvios failed or show no progress for a long period,
+        1  if migvios failed or has shown no progress for a long period,
         set module.status[<target_uple>] with the status
     """
     global CHANGED
@@ -759,16 +780,23 @@ def nim_migvios_tuple(module, target_tuple, stop_event):
 def nim_migvios(module, vios):
     """
     Execute the 'nim -o migvios' command against the specified vios
-        - module   the module variable
-        - vios     the VIOS to run the command against
-    module.param used
-        - backup_prefix       (optional) to build the name of the backup
-        - spot_prefix         (mandatory) to build the name of the spot
-        - mksysb_prefix       (mandatory) to build the name of the mksysb
-        - bosinst_data_prefix (mandatory) to build the name of the bosinst_data
-        - time_limit          (not supported yet)
-    return
-        - ret the return code of the command
+
+    args:
+        module   the Ansible module
+        vios     the VIOS to run the command against
+
+    module.param used:
+        action              (for logging only)
+        backup_prefix       (optional) to build the name of the backup
+        spot_prefix         (mandatory) to build the name of the spot
+        mksysb_prefix       (mandatory) to build the name of the mksysb
+        bosinst_data_prefix (mandatory) to build the name of the bosinst_data
+        boot                (mandatory) <eys|no> does the client need to be booted
+        resolv_conf         (mandatory) the resolv_conf NIM resource
+        time_limit          (not supported yet)
+
+    return:
+        ret      the return code of the command
     """
     global CHANGED
     global OUTPUT
@@ -838,14 +866,16 @@ def nim_migvios(module, vios):
 def nim_wait_migvios(module, vios):
     """
     Wait for the migvios to finish for the specified VIOS
-        - module        the module variable
-        - vios          the VIOS to run the command against
-    return
-        - ret
-            -1 if timed out,
-            0  if migvios succeeded,
-            1  if migvios failed,
-            2  if internal or command error,
+
+    args:
+        module  the Ansible module
+        vios    the VIOS to wait for
+
+    return:
+        -1 if timed out,
+        0  if migvios succeeded,
+        1  if migvios failed,
+        2  if internal or command error,
     """
     global CHANGED
     global OUTPUT
@@ -879,9 +909,9 @@ def nim_wait_migvios(module, vios):
         #     OUTPUT.append('    ' + msg)
         #     return -1
 
-        (ret, std_out, std_err) = exec_cmd(cmd, module, debug_data=False, shell_True)
+        (ret, std_out, std_err) = exec_cmd(cmd, module, debug_data=False, shell=True)
         if ret != 0:
-            msg = 'Failed to get the NIM state for {}: {} {}'
+            msg = 'Failed to get the NIM state for {}: {} {}'\
                   .format(vios, std_out, std_err)
             logging.error(msg)
             OUTPUT.append('    ' + msg)
