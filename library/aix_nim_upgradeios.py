@@ -107,7 +107,8 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
         myfile.close()
         msg = 'Command: {} Exception: {}'.format(cmd, exc)
         ret = 1
-        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT,
+                         debug_output=DEBUG_DATA, status=module.status)
 
     # check for error message
     if os.path.getsize(stderr_file) > 0:
@@ -125,7 +126,8 @@ def exec_cmd(cmd, module, exit_on_error=False, debug_data=True, shell=False):
     if ret != 0 and exit_on_error is True:
         msg = 'Command: {} RetCode:{} ... stdout:{} stderr:{}'\
               .format(cmd, ret, output, errout)
-        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT,
+                         debug_output=DEBUG_DATA, status=module.status)
 
     return (ret, output, errout)
 
@@ -145,6 +147,9 @@ def get_nim_clients_info(module, lpar_type):
         the list of the name of the lpar objects defined on the
         nim master and their associated cstate value
     """
+    global CHANGED
+    global OUTPUT
+    global DEBUG_DATA
     info_hash = {}
 
     cmd = 'LC_ALL=C lsnim -t {} -l'.format(lpar_type)
@@ -152,7 +157,8 @@ def get_nim_clients_info(module, lpar_type):
     if ret != 0:
         msg = 'Cannot list NIM {} objects: {}'.format(lpar_type, std_err)
         logging.error(msg)
-        module.fail_json(changed=CHANGED, msg=msg, meta=OUTPUT)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT,
+                         debug_output=DEBUG_DATA, status=module.status)
 
     # lpar name and associated Cstate
     obj_key = ''
@@ -191,6 +197,7 @@ def get_nim_clients_info(module, lpar_type):
                 info_hash[obj_key]['vios_ip'] = match_if.group(1)
                 continue
 
+    logging.debug('get_nim_clients_info return: {}'.format(info_hash))
     return info_hash
 
 
@@ -207,6 +214,7 @@ def check_vios_targets(module, targets):
     return:
         the list of the existing vios tuple matching the target list
     """
+    logging.debug('ENTER check_vios_targets targets: {}'.format(targets))
     vios_list = {}
     vios_list_tuples_res = []
     vios_list_tuples = targets.replace(" ", "").replace("),(", ")(").split('(')
@@ -250,6 +258,21 @@ def check_vios_targets(module, targets):
             logging.warn(msg)
             continue
 
+        # check vios connectivity
+        res = 0
+        for elem in tuple_elts:
+            cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', elem,
+                   '"/usr/bin/ls /dev/null; echo rc=$?"']
+            (ret, std_out, std_err) = exec_cmd(cmd, module)
+            if ret != 0:
+                res = 1
+                msg = 'skipping {}: cannot reach {} with c_rsh: {}, {}, {}'\
+                      .format(vios_tuple, elem, res, std_out, std_err)
+                logging.info(msg)
+                continue
+        if res != 0:
+            continue
+
         if tuple_len == 2:
             vios_list[tuple_elts[0]] = tuple_elts[1]
             vios_list[tuple_elts[1]] = tuple_elts[0]
@@ -281,6 +304,7 @@ def nim_set_infofile(module):
     """
     global CHANGED
     global OUTPUT
+    global DEBUG_DATA
     file_path = '/etc/niminfo'
 
     if 'email' not in module.params:
@@ -307,8 +331,8 @@ def nim_set_infofile(module):
         except IOError as e:
             msg = 'Failed to parse file %s: %s.'.format(e.filename, e.strerror)
             logging.error(msg)
-            module.fail_json(msg=msg)
-
+            module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT,
+                             debug_output=DEBUG_DATA, status=module.status)
     return 0
 
 
@@ -326,6 +350,7 @@ def nim_backup(module):
         vios_status   (optional)
         location      (optional)
         backup_prefix (optional) to build the name of the backup
+        force         (optional) remove existing backup if any
 
     return:
         error_nb number of errors if any
@@ -338,11 +363,7 @@ def nim_backup(module):
     # fixed part of the command
     # nim -Fo define -t ios_backup -a mk_image=yes -a server=master
     #  -a source=<vios> -a location=/export/nim/ios_backup/ios_backup_<vios> ios_backup_<vios>
-    cmd = ['export', 'NIM_DEBUG=1', ';']
-    cmd += ['nim', '-Fo', 'define']
-    cmd += ['-t', 'ios_backup']
-    cmd += ['-a', 'mk_image=yes']
-    cmd += ['-a', 'server=master']
+    cmd = 'nim -Fo define -t ios_backup -a mk_image=yes -a server=master'
 
     vios_key = []
     for target_tuple in module.targets:
@@ -382,15 +403,6 @@ def nim_backup(module):
             OUTPUT.append('    ' + msg)
             return 0
 
-        # TBC - Begin: Uncomment for testing without effective upgrade operation
-        # OUTPUT.append('Warning: testing without effective upgrade operation')
-        # OUTPUT.append('NIM Command: {} '.format(cmd))
-        # ret = 0
-        # std_out = 'NIM Command: {} '.format(cmd)
-        # module.status[vios_key] = 'SUCCESS-BCKP'
-        # continue
-        # TBC - End
-
         module.status[vios_key] = 'SUCCESS-BCKP'
 
         for vios in target_tuple:
@@ -410,16 +422,32 @@ def nim_backup(module):
             #  -a source=<vios>
             #  -a location=/export/nim/viosbr/ios_backup_<vios>
             #  ios_backup_<vios>
-            cmd += ['-a', 'source={}'.format(vios)]
-            cmd += ['-a', 'location={}/{}'.format(backup_info['location'],
-                                                  backup_info['name'])]
-            cmd += [backup_info['name']]
-            (ret, std_out, std_err) = exec_cmd(cmd, module)
+            cmd += ' -a source={} -a location={}/{} {}'\
+                   .format(vios, backup_info['location'],
+                           backup_info['name'], backup_info['name'])
+            rm_cmd = ''
+            if module.params['force'] == 'yes':
+                rm_cmd = 'lsnim -l {} && nim -o remove {}; '\
+                         .format(backup_info['name'], backup_info['name'])
+
+            cmd = 'export NIM_DEBUG=1; ' + rm_cmd + cmd
+
+            # TBC - Begin: Uncomment for testing without effective upgrade operation
+            # OUTPUT.append('Warning: testing without effective upgrade operation')
+            # OUTPUT.append('NIM Command: {} '.format(cmd))
+            # ret = 0
+            # std_out = 'NIM Command: {} '.format(cmd)
+            # module.status[vios_key] = 'SUCCESS-BCKP'
+            # module.nim_node['nim_vios'][vios]['backup'] = backup_info
+            # continue
+            # TBC - End
+
+            (ret, std_out, std_err) = exec_cmd(cmd, module, shell=True)
 
             if ret != 0:
                 logging.error('NIM Command: {} failed {} {} {}'
                               .format(cmd, ret, std_out, std_err))
-                OUTPUT.append('    Failed to backuped VIOS {} with NIM: {}'
+                OUTPUT.append('    Failed to backup VIOS {} with NIM: {}'
                               .format(vios, std_err))
                 # set the error label to be used in sub routines
                 if vios == vios1:
@@ -429,8 +457,8 @@ def nim_backup(module):
                 error_nb += 1
                 break  # next tuple
             else:
-                module.nim_node['nim_vios'][vios]['backup'] = backup_info
-                msg = 'VIOS {} successfully backuped'.format(vios)
+                module.nim_node['nim_vios'][vios]['backup'] = backup_info.copy()
+                msg = 'VIOS {} successfully backed up'.format(vios)
                 logging.info(msg)
                 OUTPUT.append('    ' + msg)
                 # CHANGED = True
@@ -460,6 +488,7 @@ def nim_viosbr(module):
     """
     global CHANGED
     global OUTPUT
+    global DEBUG_DATA
     error_nb = 0
 
     # set label for status depending of the action
@@ -471,15 +500,15 @@ def nim_viosbr(module):
         # Should not happen
         msg = 'Unknown action "{}" in nim_viosbr'.format(module.params['action'])
         logging.error(msg)
-        module.fail_json(msg=msg)
+        module.fail_json(changed=CHANGED, msg=msg, output=OUTPUT,
+                         debug_output=DEBUG_DATA, status=module.status)
 
     # fixed part of the command for view and restore
     # nim -Fo viosbr -a viosbr_action=view -a ios_backup=ios_backup_<vios> <vios>
     # nim -Fo viosbr -a ios_backup=ios_backup_<vios> <vios>
-    cmd = ['export', 'NIM_DEBUG=1', ';']
-    cmd += ['nim', '-Fo', 'viosbr']
+    cmd = 'export NIM_DEBUG=1; nim -Fo viosbr'
     if module.params['action'] == 'view_backup':
-        cmd += ['-a', 'viosbr_action=view']
+        cmd += ' -a viosbr_action=view'
 
     vios_key = []
     for target_tuple in module.targets:
@@ -519,15 +548,6 @@ def nim_viosbr(module):
             OUTPUT.append('    ' + msg)
             return 0
 
-        # TBC - Begin: Uncomment for testing without effective upgrade operation
-        # OUTPUT.append('Warning: testing without effective upgrade operation')
-        # OUTPUT.append('NIM Command: {} '.format(cmd))
-        # ret = 0
-        # std_out = 'NIM Command: {} '.format(cmd)
-        # module.status[vios_key] = 'SUCCESS-' + action_label
-        # continue
-        # TBC - End
-
         module.status[vios_key] = 'SUCCESS-' + action_label
 
         for vios in target_tuple:
@@ -545,10 +565,20 @@ def nim_viosbr(module):
 
             # finalize the command
             #  -a ios_backup=ios_backup_<vios> <vios>
-            cmd += ['-a', 'ios_backup={}'.format(backup_name)]
-            cmd += [vios]
+            cmd += ' -a ios_backup={} {}'.format(backup_name, vios)
 
-            (ret, std_out, std_err) = exec_cmd(cmd, module)
+            # TBC - Begin: Uncomment for testing without effective upgrade operation
+            # OUTPUT.append('Warning: testing without effective upgrade operation')
+            # OUTPUT.append('NIM Command: {} '.format(cmd))
+            # ret = 0
+            # std_out = 'NIM Command: {} '.format(cmd)
+            # module.status[vios_key] = 'SUCCESS-' + action_label
+            # if module.params['action'] == 'restore_backup':
+            #     CHANGED = True
+            # continue
+            # TBC - End
+
+            (ret, std_out, std_err) = exec_cmd(cmd, module, shell=True)
 
             if ret != 0:
                 logging.error('NIM Command: {} failed {} {} {}'
@@ -691,15 +721,6 @@ def nim_migvios_tuple(module, target_tuple, stop_event):
     logging.info('nim_migvios {} for target_tuple: {}'
                  .format(module.params['action'], target_tuple))
 
-    # TBC - Begin: Uncomment for testing without effective migvios operation
-    # OUTPUT.append('Warning: testing without effective upgrade operation')
-    # OUTPUT.append('NIM Command: {} '.format(cmd))
-    # ret = 0
-    # std_out = 'NIM Command: {} '.format(cmd)
-    # module.status[vios_key] = 'SUCCESS-UPGR'
-    # continue
-    # TBC - End
-
     for vios in target_tuple:
         logging.info('nim_migvios {} for VIOS {}'
                      .format(module.params['action'], vios))
@@ -831,14 +852,30 @@ def nim_migvios(module, vios):
     #     <vios>
 # TODO: VRO nim -o migvios -a debug possible value? set internally or from playbook?
     # TBC: -a time_limit is not supported yet
-    cmd = ['nim', '-o', 'migvios', '-a', 'mk_image=yes']
-    cmd += ['-a', 'boot_client={}'.format(module.params['boot'])]
-    cmd += ['-a', 'resolv_conf={}'.format(module.params['resolv_conf'])]
-    cmd += ['-a', 'ios_backup={}'.format(backup_name)]
-    cmd += ['-a', 'spot={}'.format(module.params['spot_prefix'])]
-    cmd += ['-a', 'ios_mksysb={}'.format(module.params['mksysb_prefix'])]
-    cmd += ['-a', 'bosinst_data={}'.format(module.params['bosinst_data_prefix'])]
-    cmd += [vios]
+    cmd = 'nim -o migvios -a mk_image=yes'
+    cmd += ' -a boot_client={} -a resolv_conf={} -a ios_backup={}'\
+           ' -a spot={} -a ios_mksysb={} -a bosinst_data={} {}'\
+           .format(module.params['boot'],
+                   module.params['resolv_conf'],
+                   backup_name,
+                   module.params['spot_prefix'],
+                   module.params['mksysb_prefix'],
+                   module.params['bosinst_data_prefix'],
+                   vios)
+
+    # TBC - Begin: Uncomment for testing without effective migvios operation
+    OUTPUT.append('Warning: testing without effective migvios command')
+    OUTPUT.append('NIM Command: {} '.format(cmd))
+    ret = 0
+    if 'backup' in module.nim_node['nim_vios'][vios]:
+        module.nim_node['nim_vios'][vios]['backup']['name'] = backup_name
+    else:
+        module.nim_node['nim_vios'][vios]['backup'] = {}
+        module.nim_node['nim_vios'][vios]['backup']['name'] = backup_name
+    CHANGED = True
+    return ret
+    # TBC - End
+
     (ret, std_out, std_err) = exec_cmd(cmd, module)
 
     if ret != 0:
@@ -1009,6 +1046,7 @@ if __name__ == '__main__':
             # backup operation
             location=dict(required=False, type='str'),
             backup_prefix=dict(required=False, type='str'),
+            force=dict(choices=['yes', 'no'], required=False, type='str', default='no'),
 
             # viosbr view
             # backup_prefix=dict(required=False, type='str'),
@@ -1051,6 +1089,9 @@ if __name__ == '__main__':
     # Get Module params
     # =========================================================================
     MODULE.status = {}
+    MODULE.targets = []
+    MODULE.nim_node = {}
+    nb_error = 0
 
     # build a time structure for time_limit attribute,
     MODULE.time_limit = None
@@ -1073,7 +1114,7 @@ if __name__ == '__main__':
         VARS['log_file'] = LOGNAME
 
     # Open log file
-    DEBUG_DATA.append('Log file: {}'.format(VARS['log_file']))
+    OUTPUT.append('Log file: {}'.format(VARS['log_file']))
     LOGFRMT = '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s'
     logging.basicConfig(filename='{}'.format(VARS['log_file']), format=LOGFRMT, level=logging.DEBUG)
 
@@ -1086,13 +1127,16 @@ if __name__ == '__main__':
     # =========================================================================
     # build NIM node info (if needed)
     # =========================================================================
-    if not MODULE.params['nim_node']:
+    if MODULE.params['nim_node']:
         MODULE.nim_node = MODULE.params['nim_node']
-    else:
-        MODULE.nim_node['nim_vios'] = get_nim_clients_info(MODULE, 'vios')
-        logging.debug('NIM VIOS: {}'.format(MODULE.nim_node['nim_vios']))
+        logging.info('VRO Using previous nim_node: {}'
+                     .format(MODULE.nim_node))
 
-    ret = check_vios_targets(MODULE.params['targets'])
+    if 'nim_vios' not in MODULE.nim_node:
+        MODULE.nim_node['nim_vios'] = get_nim_clients_info(MODULE, 'vios')
+    logging.debug('NIM VIOS: {}'.format(MODULE.nim_node['nim_vios']))
+
+    ret = check_vios_targets(MODULE, MODULE.params['targets'])
     if ret and (ret is not None):
         MODULE.targets = ret
         OUTPUT.append('Targets list:{}'.format(MODULE.targets))
@@ -1103,27 +1147,29 @@ if __name__ == '__main__':
         if MODULE.params['action'] == 'backup':
             nim_backup(MODULE)
 
-        if MODULE.params['action'] == 'view_backup' or MODULE.params['action'] == 'restore_backup':
+        elif MODULE.params['action'] == 'view_backup'\
+                or MODULE.params['action'] == 'restore_backup':
             nim_viosbr(MODULE)
 
-        elif MODULE.params['action'] == 'upgrade_restore' or MODULE.params['action'] == 'all':
+        elif MODULE.params['action'] == 'upgrade_restore'\
+                or MODULE.params['action'] == 'all':
             nim_migvios_all(MODULE)
 
         else:
             msg = 'Unknown action "{}"'.format(MODULE.params['action'])
             logging.error(msg)
-            MODULE.fail_json(msg=msg)
+            MODULE.fail_json(changed=CHANGED, msg=msg, output=OUTPUT,
+                             debug_output=DEBUG_DATA, status=MODULE.status)
 
         # Prints status for each targets
-        nb_error = 0
         msg = 'NIM upgradeios {} operation status:'.format(MODULE.params['action'])
         if MODULE.status:
             OUTPUT.append(msg)
             logging.info(msg)
-            for vios_key, status in MODULE.status:
-                OUTPUT.append('    {} : {}'.format(vios_key, status))
-                logging.info('    {} : {}'.format(vios_key, status))
-                if not re.match(r"^SUCCESS", status):
+            for vios_key in MODULE.status:
+                OUTPUT.append('    {} : {}'.format(vios_key, MODULE.status[vios_key]))
+                logging.info('    {} : {}'.format(vios_key, MODULE.status[vios_key]))
+                if not re.match(r"^SUCCESS", MODULE.status[vios_key]):
                     nb_error += 1
         else:
             logging.error(msg + ' MODULE.status table is empty')
@@ -1149,10 +1195,21 @@ if __name__ == '__main__':
     # =========================================================================
     # Exit
     # =========================================================================
-    MODULE.exit_json(
+    if nb_error == 0:
+        MODULE.exit_json(
+            changed=CHANGED,
+            msg=msg,
+            targets=MODULE.targets,
+            nim_node=MODULE.nim_node,
+            debug_output=DEBUG_DATA,
+            output=OUTPUT,
+            status=MODULE.status)
+
+    MODULE.fail_json(
         changed=CHANGED,
-        msg='NIM upgradeios operation completed successfully',
+        msg=msg,
         targets=MODULE.targets,
+        nim_node=MODULE.nim_node,
         debug_output=DEBUG_DATA,
         output=OUTPUT,
         status=MODULE.status)
