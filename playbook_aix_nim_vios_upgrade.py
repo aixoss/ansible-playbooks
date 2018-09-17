@@ -3,7 +3,7 @@
   hosts: all
   gather_facts: no
   vars:
-    log_file: "/tmp/ansible_vios_upgrade_debug.log"
+    log_file: "/tmp/ansible_upgradeios_debug.log"
     backup_prefix: "vro_ios_bckp"
     backup_location: "/export/nim/ios_backup"
 
@@ -18,17 +18,17 @@
     #
     #  register: hc_result
 
-
     - name: "AIX NIM VIOS Backup"
       aix_nim_upgradeios:
         description: 'Create a vios backup'
         action: "backup"
         #targets: "(p7juav1,p7juav2) (p7jufv1,p7jufv2)"
-        targets: "p7juav1"
+        targets: "(p7juav1)"
         #vios_status: "{{ hc_result.status }}"
         vars: "{{ vars }}"
         backup_prefix: "{{ vars.backup_prefix }}"
         location: "{{ vars.backup_location }}"
+        #force: "yes"
         #time_limit: "mm/dd/yyyy hh:mm"
 
       register: backup_result
@@ -39,7 +39,8 @@
         description: 'Display vios backup information'
         action: "view_backup"
         #targets: "(p7juav1,p7juav2) (p7jufv1,p7jufv2)"
-        targets: "p7juav1"
+        targets: "(p7juav1)"
+        nim_node: "{{ backup_result.nim_node }}"
         vios_status: "{{ backup_result.status }}"
         vars: "{{ vars }}"
         backup_prefix: "{{ vars.backup_prefix }}"
@@ -50,7 +51,8 @@
         description: 'Upgrade vios and restore vios backup'
         action: "upgrade_restore"
         #targets: "(p7juav1,p7juav2) (p7jufv1,p7jufv2)"
-        targets: "p7juav1"
+        targets: "(p7juav1)"
+        nim_node: "{{ backup_result.nim_node }}"
         vios_status: "{{ backup_result.status }}"
         vars: "{{ vars }}"
         #backup_prefix: "{{ vars.backup_prefix }}"
@@ -69,7 +71,8 @@
     #    description: 'Restore a vios backup'
     #    action: "restore_backup"
     #    #targets: "(p7juav1,p7juav2) (p7jufv1,p7jufv2)"
-    #    targets: "p7juav1"
+    #    targets: "(p7juav1)"
+    #    nim_node: "{{ upgrade_result.nim_node }}"
     #    #vios_status: "{{ backup_result.status }}"
     #    vars: "{{ vars }}"
     #    backup_prefix: "{{ vars.backup_prefix }}"
@@ -77,8 +80,8 @@
     #  register: restore_result
 
     #- debug: var=hc_result.output
-    - debug: var=backup_result.output
-    - debug: var=upgrade_result.output
+    #- debug: var=backup_result.output
+    #- debug: var=upgrade_result.output
     #- debug: var=restore_result.output
 
 
