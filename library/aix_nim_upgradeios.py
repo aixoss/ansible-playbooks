@@ -307,7 +307,7 @@ def nim_set_infofile(module):
     global DEBUG_DATA
     file_path = '/etc/niminfo'
 
-    if 'email' not in module.params:
+    if 'email' in module.params:
         if not re.match(r"^\s*\s+@\s+$", module.params['email']):
             logging.error('Check the email address is valid: "{}"'.format(module.params['email']))
             OUTPUT.append('Check the email address is valid: "{}"'.format(module.params['email']))
@@ -852,16 +852,16 @@ def nim_migvios(module, vios):
     #     <vios>
 # TODO: VRO nim -o migvios -a debug possible value? set internally or from playbook?
     # TBC: -a time_limit is not supported yet
-    cmd = 'nim -o migvios -a mk_image=yes'
-    cmd += ' -a boot_client={} -a resolv_conf={} -a ios_backup={}'\
-           ' -a spot={} -a ios_mksysb={} -a bosinst_data={} {}'\
-           .format(module.params['boot'],
-                   module.params['resolv_conf'],
-                   backup_name,
-                   module.params['spot_prefix'],
-                   module.params['mksysb_prefix'],
-                   module.params['bosinst_data_prefix'],
-                   vios)
+    cmd = 'nim -o migvios -a mk_image=yes'\
+          ' -a boot_client={1} -a resolv_conf={2} -a ios_backup={3}'\
+          ' -a spot={4}_{0} -a ios_mksysb={5}_{0} -a bosinst_data={6}_{0} {0}'\
+          .format(vios,
+                  module.params['boot'],
+                  module.params['resolv_conf'],
+                  backup_name,
+                  module.params['spot_prefix'],
+                  module.params['mksysb_prefix'],
+                  module.params['bosinst_data_prefix'])
 
     # TBC - Begin: Uncomment for testing without effective migvios operation
     OUTPUT.append('Warning: testing without effective migvios command')
