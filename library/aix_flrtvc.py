@@ -925,7 +925,7 @@ def exec_cmd(cmd, output, exit_on_error=False, shell=False):
 
     except subprocess.CalledProcessError as exc:
         myfile.close()
-        errout = re.sub(r'rc=[-\d]+\n$', '', exc.stdout)  # remove the rc of c_rsh with echo $?
+        errout = re.sub(r'rc=[-\d]+\n$', '', exc.output)  # remove the rc of c_rsh with echo $?
         res = exc.returncode
 
     except OSError as exc:

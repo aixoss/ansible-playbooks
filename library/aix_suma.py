@@ -208,8 +208,8 @@ def exec_cmd(cmd, shell=False):
 
     except subprocess.CalledProcessError as exc:
         logging.debug("exec command rc:{} out:{}"
-                      .format(exc.returncode, exc.stdout))
-        return exc.returncode, exc.stdout
+                      .format(exc.returncode, exc.output))
+        return exc.returncode, exc.output
 
     except OSError as exc:
         logging.debug("exec command rc:{} out:{}"
@@ -240,7 +240,7 @@ def get_nim_clients(module):
     std_err = ''
     clients_list = []
 
-    cmd = ['LC_ALL=C lsnim', '-t', 'standalone']
+    cmd = ['lsnim', '-t', 'standalone']
 
     try:
         proc = subprocess.Popen(cmd, shell=False, stdin=None,
@@ -280,11 +280,11 @@ def get_nim_lpp_source():
     std_out = ''
     lpp_source_list = {}
 
-    cmd = ['LC_ALL=C lsnim', '-t', 'lpp_source', '-l']
+    cmd = 'LC_ALL=C lsnim -t lpp_source -l'
 
     logging.debug("SUMA command:{}".format(cmd))
 
-    ret, std_out = exec_cmd(' '.join(cmd), shell=True)
+    ret, std_out = exec_cmd(cmd, shell=True)
     if ret != 0:
         logging.error("SUMA command error rc:{}, error: {}"
                       .format(ret, std_out))
@@ -395,17 +395,13 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
             os.makedirs(metadata_dir)
 
         # Build suma command to get metadata
-        suma_filterml = "FilterML={}".format(metadata_filter_ml)
-        suma_dltarget = "DLTarget={}".format(metadata_dir)
-        suma_display = "DisplayName='{}'".format(PARAMS['Description'])
-
-        cmd = ['LC_ALL=C /usr/sbin/suma', '-x', '-a', 'Action=Metadata',
-               '-a', 'RqType=Latest', '-a', suma_filterml,
-               '-a', suma_dltarget, '-a', suma_display]
+        cmd = 'LC_ALL=C /usr/sbin/suma -x -a Action=Metadata '\
+              '-a RqType=Latest -a FilterML={} -a DLTarget={} -a DisplayName="{}"'\
+              .format(metadata_filter_ml, metadata_dir, PARAMS['Description'])
 
         logging.debug("SUMA command:{}".format(cmd))
 
-        ret, stdout = exec_cmd(' '.join(cmd), shell=True)
+        ret, stdout = exec_cmd(cmd, shell=True)
         if ret != 0:
             logging.error("SUMA command error rc:{}, error: {}"
                           .format(ret, stdout))
@@ -455,17 +451,13 @@ def compute_rq_name(rq_type, oslevel, clients_target_oslevel):
             # =================================================================
             # Build suma command to get metadata
             # =================================================================
-            suma_filterml = 'FilterML={}'.format(metadata_filter_ml)
-            suma_dltarget = 'DLTarget={}'.format(metadata_dir)
-            suma_display = 'DisplayName="{}"'.format(PARAMS['Description'])
-
-            cmd = ['LC_ALL=C /usr/sbin/suma', '-x', '-a', 'Action=Metadata',
-                   '-a', 'RqType=Latest', '-a', suma_filterml,
-                   '-a', suma_dltarget, '-a', suma_display]
+            cmd = 'LC_ALL=C /usr/sbin/suma -x -a Action=Metadata '\
+                  '-a RqType=Latest -a FilterML={} -a DLTarget={} -a DisplayName="{}"'\
+                  .format(metadata_filter_ml, metadata_dir, PARAMS['Description'])
 
             logging.debug("suma command: {}".format(cmd))
 
-            ret, stdout = exec_cmd(' '.join(cmd), shell=True)
+            ret, stdout = exec_cmd(cmd, shell=True)
             if ret != 0:
                 logging.error("SUMA command error rc:{}, error: {}"
                               .format(ret, stdout))
@@ -603,25 +595,20 @@ def suma_command(module, action):
     if rq_type == 'Latest':
         rq_type = 'SP'
 
-    suma_cmd = 'LC_ALL=C /usr/sbin/suma -x -a RqType={} '.format(rq_type)
-    suma_action = '-a Action={} '.format(action)
-    suma_filterml = '-a FilterML={} '.format(PARAMS['FilterMl'])
-    suma_dltarget = '-a DLTarget={} '.format(PARAMS['DLTarget'])
-    suma_rqname = '-a RqName={} '.format(PARAMS['RqName'])
-    suma_display = '-a DisplayName="{}"'.format(PARAMS['Description'])
+    suma_cmd = 'LC_ALL=C /usr/sbin/suma -x -a RqType={} -a Action={} '\
+               '-a FilterML={} -a DLTarget={} -a RqName={} -a DisplayName="{}"'\
+               .format(rq_type, action,
+                       PARAMS['FilterMl'], PARAMS['DLTarget'],
+                       PARAMS['RqName'], PARAMS['Description'])
 
-    suma_params = ''.join((suma_cmd, suma_action, suma_rqname, suma_filterml,
-                           suma_dltarget, suma_display))
+    logging.debug("SUMA - Command:{}".format(suma_cmd))
+    SUMA_OUTPUT.append("SUMA - Command:{}".format(suma_cmd))
 
-    logging.debug("SUMA - Command:{}".format(suma_params))
-    SUMA_OUTPUT.append("SUMA - Command:{}".format(suma_params))
-
-    ret, stdout, stderr = module.run_command(suma_params)
-
+    ret, stdout = exec_cmd(suma_cmd, shell=True)
     if ret != 0:
         logging.error("Error: suma {} command failed with return code {}"
                       .format(action, ret))
-        SUMA_ERROR.append("SUMA Command: {} => Error :{}".format(suma_params, stderr.split('\n')))
+        SUMA_ERROR.append("SUMA Command: {} => Error :{}".format(suma_cmd, stdout.split('\n')))
         module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     return ret, stdout
@@ -640,27 +627,24 @@ def nim_command(module):
        ret     NIM command return code
        stdout  NIM command output
     """
-    nim_cmd = 'LC_ALL=C /usr/sbin/nim  -o define  -t lpp_source  -a server=master '
-    nim_location = '-a location={} '.format(PARAMS['DLTarget'])
-    nim_package = '-a packages=all {} '.format(PARAMS['LppSource'])
-    nim_comments = '-a comments={} '.format(PARAMS['Comments'])
+    nim_cmd = 'LC_ALL=C /usr/sbin/nim  -o define  -t lpp_source  -a server=master '\
+              '-a location={} -a packages=all {} -a comments={}'\
+              .format(PARAMS['DLTarget'], PARAMS['LppSource'], PARAMS['Comments'])
 
-    nim_params = ''.join((nim_cmd, nim_location, nim_comments, nim_package))
+    logging.info("NIM - Command:{}".format(nim_cmd))
+    SUMA_OUTPUT.append("NIM command:{}".format(nim_cmd))
 
-    logging.info("NIM - Command:{}".format(nim_params))
-    SUMA_OUTPUT.append("NIM command:{}".format(nim_params))
-
-    ret, stdout, stderr = module.run_command(nim_params)
+    ret, stdout = exec_cmd(nim_cmd, shell=True)
 
     if ret != 0:
-        msg = "NIM Command: {}".format(nim_params)
+        msg = "NIM Command: {}".format(nim_cmd)
         logging.error(msg)
         SUMA_ERROR.append(msg)
         msg = "NIM operation failed - rc:{}".format(ret)
         logging.error(msg)
         SUMA_ERROR.append(msg)
-        logging.error("{}".format(stderr))
-        SUMA_ERROR.append("{}".format(stderr))
+        logging.error("{}".format(stdout))
+        SUMA_ERROR.append("{}".format(stdout))
         module.fail_json(msg=SUMA_ERROR, suma_output=SUMA_OUTPUT)
 
     return ret, stdout
@@ -675,7 +659,7 @@ def suma_list(module):
     task = PARAMS['task_id']
     if task is None or task.strip() == '':
         task = ''
-    cmde = "LC_ALL=C /usr/sbin/suma -l {}".format(task)
+    cmde = "/usr/sbin/suma -l {}".format(task)
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -714,7 +698,7 @@ def suma_edit(module):
     Depending on the shed_time parameter value, the task wil be scheduled,
         unscheduled or saved
     """
-    cmde = 'LC_ALL=C /usr/sbin/suma'
+    cmde = '/usr/sbin/suma'
     if PARAMS['sched_time'] is None:
         # save
         cmde += ' w'
@@ -758,7 +742,7 @@ def suma_unschedule(module):
     """
     Unschedule a SUMA task associated with the given task ID
     """
-    cmde = "LC_ALL=C /usr/sbin/suma -u {}".format(PARAMS['task_id'])
+    cmde = "/usr/sbin/suma -u {}".format(PARAMS['task_id'])
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -778,7 +762,7 @@ def suma_delete(module):
     """
     Delete the SUMA task associated with the given task ID
     """
-    cmde = "LC_ALL=C /usr/sbin/suma -d {}".format(PARAMS['task_id'])
+    cmde = "/usr/sbin/suma -d {}".format(PARAMS['task_id'])
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -798,7 +782,7 @@ def suma_config(module):
     """
     List the SUMA global configuration settings
     """
-    cmde = 'LC_ALL=C /usr/sbin/suma -c'
+    cmde = '/usr/sbin/suma -c'
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:
@@ -818,7 +802,7 @@ def suma_default(module):
     """
     List default SUMA tasks
     """
-    cmde = 'LC_ALL=C /usr/sbin/suma -D'
+    cmde = '/usr/sbin/suma -D'
     ret, stdout, stderr = module.run_command(cmde)
 
     if ret != 0:

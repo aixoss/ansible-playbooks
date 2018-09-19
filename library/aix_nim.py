@@ -17,6 +17,7 @@
 ######################################################################
 """AIX NIM: server setup, install packages, update SP or TL"""
 
+import os
 import re
 import subprocess
 import threading
@@ -96,31 +97,51 @@ def exec_cmd(cmd, module, shell=False):
     In case of error set an error message and fails the module
 
     return
-        - ret_code  (0)
+        - ret       return code of the command
         - std_out   output of the command
+        - std_err   error out of the command
     """
 
     global DEBUG_DATA
+    ret = 0
     std_out = ''
+    std_err = ''
+    th_id = threading.current_thread().ident
+    stderr_file = '/tmp/ansible_vios_check_cmd_stderr_{}'.format(th_id)
 
     logging.debug('exec command:{}'.format(cmd))
     try:
-        std_out = subprocess.check_output(cmd,
-                                          stderr=subprocess.STDOUT,
-                                          shell=shell)
+        myfile = open(stderr_file, 'w')
+        std_out = subprocess.check_output(cmd, stderr=myfile, shell=shell)
+        myfile.close()
+        s = re.search(r'rc=([-\d]+)$', std_out)
+        if s:
+            ret = int(s.group(1))
+            std_out = re.sub(r'rc=[-\d]+\n$', '', std_out)  # remove the rc of c_rsh with echo $?
 
     except subprocess.CalledProcessError as exc:
-        module.fail_json(msg='Command: {} Exception: {}'.format(cmd, exc))
+        myfile.close()
+        std_err = re.sub(r'rc=[-\d]+\n$', '', exc.output)  # remove the rc of c_rsh with echo $?
+        ret = exc.returncode
 
     except Exception as exc:
+        myfile.close()
         module.fail_json(msg='Command: {} Exception: {} =>Data:{}'
                          .format(cmd, exc, std_out))
 
-    # DEBUG
-    DEBUG_DATA.append('exec command:{}'.format(cmd))
-    logging.debug('exec  command out:{}'.format(std_out))
+    # check for error message
+    if os.path.getsize(stderr_file) > 0:
+        myfile = open(stderr_file, 'r')
+        std_err += ''.join(myfile)
+        myfile.close()
+    os.remove(stderr_file)
 
-    return (0, std_out)
+    # DEBUG
+    logging.debug('exec command:{}'.format(cmd))
+    logging.debug('exec command std_out:{}'.format(std_out))
+    logging.debug('exec command std_err:{}'.format(std_err))
+
+    return (ret, std_out, std_err)
 
 
 # ----------------------------------------------------------------
@@ -280,12 +301,11 @@ def get_nim_lpp_source(module):
     std_out = ''
     lpp_source_list = {}
 
-    cmd = ['LC_ALL=C lsnim', '-t', 'lpp_source', '-l']
+    cmd = 'LC_ALL=C lsnim -t lpp_source -l'
 
-    ret, std_out = exec_cmd(' '.join(cmd), module, True)
-
+    ret, std_out, std_err = exec_cmd(cmd, module, True)
     if ret != 0:
-        return ret, std_out
+        return ret, std_err
 
     # lpp_source list
     for line in std_out.rstrip().split('\n'):
@@ -585,7 +605,7 @@ def perform_async_customization(module, lpp_source, targets):
 
     do_not_error = False
 
-    ret, stdout, stderr = module.run_command(cmde)
+    ret, stdout, stderr = exec_cmd(cmde, module, True)
 
     logging.info("[RC] {}".format(ret))
     logging.info("[STDOUT] {}".format(stdout))
@@ -640,7 +660,7 @@ def perform_sync_customization(module, lpp_source, targets):
 
     do_not_error = False
 
-    ret, stdout, stderr = module.run_command(cmde)
+    ret, stdout, stderr = exec_cmd(cmde, module, True)
 
     logging.info("[RC] {}".format(ret))
     logging.info("[STDOUT] {}".format(stdout))
@@ -691,7 +711,7 @@ def list_fixes(target, module):
 
     fixes = []
     if target == 'master':
-        cmde = 'LC_ALL=C /usr/sbin/emgr -l'
+        cmde = '/usr/sbin/emgr -l'
     else:
         cmde = '/usr/lpp/bos.sysmgt/nim/methods/c_rsh {} '\
                '"LC_ALL=C /usr/sbin/emgr -l; echo rc=$?"'\
