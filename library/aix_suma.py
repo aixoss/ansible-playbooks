@@ -628,8 +628,8 @@ def nim_command(module):
        stdout  NIM command output
     """
     nim_cmd = 'LC_ALL=C /usr/sbin/nim  -o define  -t lpp_source  -a server=master '\
-              '-a location={} -a packages=all {} -a comments={}'\
-              .format(PARAMS['DLTarget'], PARAMS['LppSource'], PARAMS['Comments'])
+              '-a location={} -a packages=all -a comments={} {}'\
+              .format(PARAMS['DLTarget'], PARAMS['Comments'], PARAMS['LppSource'])
 
     logging.info("NIM - Command:{}".format(nim_cmd))
     SUMA_OUTPUT.append("NIM command:{}".format(nim_cmd))
@@ -1028,7 +1028,8 @@ def suma_down_prev(module):
         logging.info("{} is the Latest SP of TL {}."
                      .format(rq_name, filter_ml))
 
-    PARAMS['Comments'] = '"Packages for updates from {} to {}"'\
+    PARAMS['Comments'] = '"Updates from {} to {}, built by Ansible'\
+                         'Aix Automate infrastructure updates tools"'\
                          .format(filter_ml, rq_name)
 
     # ========================================================================
