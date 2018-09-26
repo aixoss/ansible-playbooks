@@ -18,6 +18,7 @@
 """AIX VIOS Health Check: check the pair of VIOS can be updated"""
 
 import os
+import stat
 import re
 import subprocess
 import threading
@@ -743,7 +744,7 @@ if __name__ == '__main__':
             module.fail_json(msg="Cannot find {}".format(vioshcfile))
 
         st = os.stat(vioshcfile)
-        if not st.st_mode & os.stat.S_IEXEC:
+        if not st.st_mode & stat.S_IEXEC:
             OUTPUT.append('Bad credentials for {}'.format(vioshcfile))
             logging.error('Bad credentials for {}'.format(vioshcfile))
             module.fail_json(msg="Bad credentials for {}".format(vioshcfile))
