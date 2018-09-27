@@ -341,7 +341,9 @@ def check_vios_targets(module, targets):
 
         # check vios connectivity
         res = 0
-        for elem in tuple_elts:
+        id = 0
+        while id < tuple_len:
+            elem =  tuple_elts[0]
             cmd = ['/usr/lpp/bos.sysmgt/nim/methods/c_rsh', elem,
                    '"/usr/bin/ls /dev/null; echo rc=$?"']
             (ret, std_out, std_err) = exec_cmd(cmd, module)
@@ -349,7 +351,7 @@ def check_vios_targets(module, targets):
                 logging.info('skipping {}: cannot reach {} with c_rsh: {}, {}, {}'
                              .format(vios_tuple, elem, res, std_out, std_err))
                 res = 1
-                continue
+            id += 2
         if res != 0:
             continue
 
@@ -1410,8 +1412,10 @@ if __name__ == '__main__':
     else:
         disk_size_policy = 'nearest'
 
-    if 'force' not in module.params['force'] or not module.params['force']:
-        force = module.params['force'] = 'no'
+    if  module.params['force']:
+        force = module.params['force']
+    else:
+        force = 'no'
 
     PARAMS['action'] = action
     PARAMS['targets'] = targets

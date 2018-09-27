@@ -634,12 +634,12 @@ def nim_updateios(module, targets_list, vios_status, update_op_tab, time_limit):
             continue
 
         # TBC - Begin: Uncomment for testing without effective update operation
-        OUTPUT.append('Warning: testing without effective update operation')
-        OUTPUT.append('NIM Command: {} '.format(updateios_cmd))
-        ret = 0
-        std_out = 'NIM Command: {} '.format(updateios_cmd)
-        update_op_tab[vios_key] = "SUCCESS-UPDT"
-        continue
+        # OUTPUT.append('Warning: testing without effective update operation')
+        # OUTPUT.append('NIM Command: {} '.format(updateios_cmd))
+        # ret = 0
+        # std_out = 'NIM Command: {} '.format(updateios_cmd)
+        # update_op_tab[vios_key] = "SUCCESS-UPDT"
+        # continue
         # TBC - End
 
         update_op_tab[vios_key] = "SUCCESS-UPDT"
