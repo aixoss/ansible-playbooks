@@ -23,6 +23,7 @@
         targets: "(gdrh10v1,hdisk1) (gdrh10v2,hdisk2) (gdrh9v1,hdisk1,gdrh9v2,hdisk1)"
         action: "alt_disk_copy"
         #vios_status: "{{ hc_result.status }}"
+        #nim_node: "{{ hc_result.nim_node }}"
         vars: "{{ vars }}"
 
       register: altd_result
@@ -39,6 +40,7 @@
         preview: "no"
         #time_limit: "mm/dd/yyyy hh:mm"
         vios_status: "{{ altd_result.status }}"
+        nim_node: "{{ altd_result.nim_node }}"
         vars: "{{ vars }}"
 
       register: updt_result

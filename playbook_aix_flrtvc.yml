@@ -13,5 +13,7 @@
         #filesets: devices
         #check_only: no
         #download_only: no
+        #clean: no
+        #force: no
       register: result
     - debug: var=result
