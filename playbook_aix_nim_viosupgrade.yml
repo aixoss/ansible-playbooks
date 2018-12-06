@@ -4,73 +4,25 @@
   gather_facts: no
   vars:
     log_file: "/tmp/ansible_viosupgrade_debug.log"
-    targets_info: "/tmp/ansible_target_info"
 
   tasks:
-
-    #- name: "AIX VIOS HEALTH CHECK"
-    #  aix_nim_vios_hc:
-    #    description: 'Check the VIOS(es) can be updated'
-    #    targets: "(gdrh10v1) (gdrh10v2) (gdrh9v1,gdrh9v2)"
-    #    action: "health_check"
-    #    vars: "{{ vars }}"
-    #
-    #  register: hc_result
-
-    #- name: "AIX NIM viosupgrade from file"
-    #  aix_nim_viosupgrade:
-    #    description: 'Upgrade vios'
-    #    action: "altdisk_install"  # can be bos_install
-    #    #vios_status: "{{ hc_result.status }}"
-    #    vars: "{{ vars }}"
-    #    target_file_name: "{{ vars.targets_info }}"
-
-    #  register: file_upgrade_result
-
-
-    #- name: "AIX NIM get viosupgrade status from file"
-    #  aix_nim_viosupgrade:
-    #    description: 'Get status of the vios upgrade'
-    #    action: "get_status"
-    #    #nim_node: "{{ backup_result.nim_node }}"
-    #    #vios_status: "{{ file_altdisk_upgrade_result.status }}"
-    #    vars: "{{ vars }}"
-    #    target_file_name: "{{ vars.targets_info }}"
-
 
     - name: "AIX NIM viosupgrade from list"
       aix_nim_viosupgrade:
         description: 'Upgrade vios'
-        action: "altdisk_install"  # can be bos_install
-        #vios_status: "{{ hc_result.status }}"
+        #vios_status: "{{hc_result.status }}"
+        #nim_node: "{{hc_result.nim_node }}"
         vars: "{{ vars }}"
-        targets: p7juav1,p7juav2
-        mksysb_name: {'p7juav1': 'mksysb_p7juav1', 'p7juav2': 'mksysb_p7juav2'}
-        spot_name: {'p7juav1': 'spot_p7juav1', 'p7juav2': 'spot_p7juav2'}
-        backup_file: {'p7juav1': '/export/nim/ios_backup/ios_backup_p7juav1'}  # if p7juav1 has a ios_backup already taken 
-        rootvg_clone_disk: {'p7juav1': 'hdisk1', 'p7juav2': 'hdisk1'}  # could use {'all': 'hdisk1'}
-        #rootvg_install_disk: {'p7juav1': 'hdisk1', 'p7juav2': 'hdisk1'}  # only for action: bos_install
-        res_resolv_conf: {'all': 'resolv_conf'}
-        res_script: {'all': 'post_inst_script'}
-        res_fb_script: {'all': 'fb_script'}
-        #res_file_res: {'all': 'file_res'}
-        res_image_data: {'all': 'image_data'}
-        res_log: {'p7juav1': '/tmp/viosupgrade_p7juav1.log', 'p7juav2': '/tmp/viosupgrade_p7juav2.log'}
-        cluster_exists: {'all': true}
-        validate_input_data: {'all': false}
-        #skip_rootvg_cloning: {'all': true}  # only for action: bos_install
+        targets: ["vios1 vios2", "vios3 vios4", "vios5"]
+        actions: {'vios1': 'altdisk', 'vios5': 'altdisk', 'all_vios': 'bosinst'} 
+        ios_mksysb: {'vios1': 'ios_1844B_72M', 'vios2': 'ios_1844B_72M', 'all_vios': 'ios_1848A_72M'}
+        alt_inst_disk: {'vios1': 'hdisk1', 'vios2': 'hdisk2'}
+        user_res: {'vios3': 'file_res', 'all_vios': 'master_net_conf'}
+        force: {'p7jufv1': True, 'p7jufv2': True, 'all_vios': False}
 
       register: upgrade_result
 
 
-    - name: "AIX NIM get viosupgrade status from list"
-      aix_nim_viosupgrade:
-        description: 'Get status of the vios upgrade'
-        action: "get_status"
-        #nim_node: "{{ backup_result.nim_node }}"
-        #vios_status: "{{ file_altdisk_upgrade_result.status }}"
-        vars: "{{ vars }}"
-        targets: p7juav1,p7juav2
 
 
     #- debug: var=hc_result.output
