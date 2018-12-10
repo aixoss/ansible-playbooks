@@ -223,8 +223,9 @@ Must be described in yaml format with the following parameters:
     aix_nim_viosupgrade:
       targets:          required; type: list; specify the list of VIOS to act upon depending
                         on the "action" specified; to perform an action on dual or single VIOS,
-                        specify the list as a tuple with the following format:
+                        specify the list of tuple with the following format:
                         ["vios1 vios2", "vios11 vios12", "vios21"];
+                        each tuple is a string, a list of vios separated by ":" or "," or spaces
       action:           required; type: dictionary. Specify the operation to perform per VIOS;
                         possible values are : bosinst or altdisk.
                         syntax: {'vios1': 'bosinst', 'vios2': 'altdisk', 'all_vios': 'bosinst'}
@@ -237,7 +238,8 @@ Must be described in yaml format with the following parameters:
                         to clone rootvg; if action is altdisk, it specify the disk where the new
                         systm will be installed.
                         the disk name is specified for each vios using the following format
-                        exemple: {'vios1': 'hdisk1', 'vios3': 'hdisk5'}
+                        exemple: {'vios1': 'hdisk1: hdisk2', 'vios3': 'hdisk5 hdisk6'}
+                        the disk names could be separated by collomn ":" or comma "," or spaces
                         the bosinst action requires one and only one of the both following conditions:
                         - an alt_inst_disk is specified for the vios
                         - an altinst_rootvg already exist on the vios

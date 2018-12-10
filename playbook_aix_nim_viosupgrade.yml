@@ -16,7 +16,7 @@
         targets: ["vios1 vios2", "vios3 vios4", "vios5"]
         actions: {'vios1': 'altdisk', 'vios5': 'altdisk', 'all_vios': 'bosinst'} 
         ios_mksysb: {'vios1': 'ios_1844B_72M', 'vios2': 'ios_1844B_72M', 'all_vios': 'ios_1848A_72M'}
-        alt_inst_disk: {'vios1': 'hdisk1', 'vios2': 'hdisk2'}
+        alt_disk: {'vios1': 'hdisk1', 'vios2': 'hdisk2, hdisk4'}
         user_res: {'vios3': 'file_res', 'all_vios': 'master_net_conf'}
         force: {'p7jufv1': True, 'p7jufv2': True, 'all_vios': False}
 

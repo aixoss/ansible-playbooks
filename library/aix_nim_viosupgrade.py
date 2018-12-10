@@ -413,7 +413,7 @@ def build_viosupgrade_cmd(vios, validate):
         cmd = cmd + " -c"
 
     if vios["alt_inst_disk"] != "":
-        cmd = cmd + " -a " + vios["alt_inst_disk"]
+        cmd = cmd + " -a " + re.sub(' +', ':', vios["alt_inst_disk"])
     elif vios["skip"] is True:
         cmd = cmd + " -s"
     if validate:
@@ -679,6 +679,7 @@ if __name__ == '__main__':
     # remove tuple having the same clusterID than an other tuple
     # remove tuple having unsuficient ioslevel
     all_targets = list(set(MODULE.params['targets']))   # remove duplicates tuples
+    all_targets = [elem.replace(',', ' ').replace(':', ' ') for elem in all_targets]
     logging.debug("ALL_TARGETS = {}".format(all_targets))
     new_target_list = []
     all_vioses = []
@@ -1020,7 +1021,9 @@ if __name__ == '__main__':
                 alt_disk = alt_inst_disk[vios_name].strip()
             elif "all_vios" in alt_inst_disk.keys():
                 alt_disk = alt_inst_disk["all_vios"].strip()
-            vios["alt_inst_disk"] = alt_disk
+            if alt_disk:
+                alt_disk = alt_disk.replace(':', ' ').replace(',', ' ').strip()
+                vios["alt_inst_disk"] = alt_disk
             if not alt_disk and action == 'altdisk':
                 msg = '{}: No alt_disk property is specified.'\
                     .format(vios_name)
@@ -1047,12 +1050,12 @@ if __name__ == '__main__':
                 disks = alt_disk.split()
                 total_size = 0
                 for disk in disks:
-                    if disk not in vios["free_pv"].keys():
+                    if disk in vios["free_pv"].keys():
+                        total_size += vios["free_pv"][disk]
+                    else:
                         msg = '{}: the specified disk {} is not free'\
                             .format(vios_name, disk)
-                        break
-                    else:
-                        total_size += vios["free_pv"][disk]
+                        break   # test disk loop
                 if msg:
                     break   # vios loop
                 if total_size < 30720 and action == "altdisk":
