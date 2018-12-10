@@ -234,10 +234,10 @@ Must be described in yaml format with the following parameters:
                         installation per vios; use the following syntax:
                         {'vios1': 'ios_1844B_72M', 'all_vios': 'ios_1844B_72M'};
                         the default value is specified by the "all_vios" key
-      alt_inst_disk:    type: dictionary; if action is bosinst, it specify the disk
-                        to clone rootvg; if action is altdisk, it specify the disk where the new
+      alt_disk:         type: dictionary; if action is bosinst, it specify the disks
+                        to clone rootvg; if action is altdisk, it specify the disks where the new
                         systm will be installed.
-                        the disk name is specified for each vios using the following format
+                        the disk names are specified for each vios using the following format
                         exemple: {'vios1': 'hdisk1: hdisk2', 'vios3': 'hdisk5 hdisk6'}
                         the disk names could be separated by collomn ":" or comma "," or spaces
                         the bosinst action requires one and only one of the both following conditions:

@@ -23,7 +23,6 @@ import subprocess
 import threading
 import logging
 import time
-# import csv
 import distutils.util
 
 # Ansible module 'boilerplate'
@@ -253,13 +252,6 @@ def get_nim_clients_info(module):
 
     return info_hash
 
-# TODO: Check if all debug section (TBC) are commented before commit
-# TODO: Check flake8 complaints
-# TODO: Add this module usage in README.md file
-# TODO: -----------------------------------------------------------------------------
-# TODO: Add message in OUTPUT
-# TODO: -----------------------------------------------------------------------------
-
 
 # ----------------------------------------------------------------
 def get_cluster_status(module, vios):
@@ -300,6 +292,8 @@ def get_viosupgrade_status(module, vios):
     Run lsnim command to get the vios status during upgrade process
     set vios["status"]   = DONE | RUNNING | ERROR
     Arguments:
+        module: {}
+        vios: {}
     Return: String status = DONE | RUNNING | ERROR
     """
     global ERROR
@@ -412,8 +406,8 @@ def build_viosupgrade_cmd(vios, validate):
     if vios["cluster_id"] != "":
         cmd = cmd + " -c"
 
-    if vios["alt_inst_disk"] != "":
-        cmd = cmd + " -a " + re.sub(' +', ':', vios["alt_inst_disk"])
+    if vios["alt_disk"] != "":
+        cmd = cmd + " -a " + re.sub(' +', ':', vios["alt_disk"])
     elif vios["skip"] is True:
         cmd = cmd + " -s"
     if validate:
@@ -434,7 +428,7 @@ def validate_vios(module, vios):
     global READY
 
     rc = 0
-    cmd = build_viosupgrade_cmd(vios, True)
+    cmd = build_viosupgrade_cmd(vios, validate=True)
     (rc, std_out, std_err) = exec_cmd(cmd, module, shell=True)
     if rc != 0:
         msg = 'Viosupgrade error on vios: {} :{}:{}'\
@@ -605,11 +599,10 @@ if __name__ == '__main__':
             # example:
             # ios_mksysb={"target1": "mksysb_name_1", "target2": "mksysb_name_2"}
             # ios_mksysb={"all_vios": "mksysb_name", "target2": "mksysb_name_2"}
+            ios_mksysb=dict(required=True, type='dict'),
             # force={"all_vios": False, "target_x": True}
             force=dict(required=False, type='dict'),
-            ios_mksysb=dict(required=True, type='dict'),
-            # spot=dict(required=True, type='dict'),
-            alt_inst_disk=dict(required=False, type='dict'),
+            alt_disk=dict(required=False, type='dict'),
             # Resources (-e option) The valid resource type are:
             # resolv_conf, script, fb_script, file_res, image_data, and log
             # Dictionary with key: 'all_vios' or hostname and value: string
@@ -625,7 +618,7 @@ if __name__ == '__main__':
 
     msg = ""
     user_res = {}
-    alt_inst_disk = {}
+    alt_disk = {}
     targets = MODULE.params['targets']
     actions = MODULE.params['actions']
     ios_mksysb = MODULE.params['ios_mksysb']
@@ -666,8 +659,8 @@ if __name__ == '__main__':
         # get all existing user_res from nim server
         # The valid types are: resolv_conf, script, fb_script, file_res, image_data, and log.
         nim_user_res = get_nim_user_res(MODULE)
-    if MODULE.params['alt_inst_disk']:
-        alt_inst_disk = MODULE.params['alt_inst_disk']
+    if MODULE.params['alt_disk']:
+        alt_disk = MODULE.params['alt_disk']
 
     # if health check status is known remove tuple with wrong status
     # build the list of target matching nim client list
@@ -703,9 +696,9 @@ if __name__ == '__main__':
     # tuples[tuple][vios_name]["action"] = "" # String: <bosinst | altdisk>
     # tuples[tuple][vios_name]["ios_mksysb"] = "" # String: <ios_mksysb resource name>
     # tuples[tuple][vios_name]["spot"] = "" # String: <spot resource name>
-    # tuples[tuple][vios_name]["alt_inst_disk"] = "" # String: <disk name for clonning rootvg
-    #                                                          or alternate disk for installation>
-    # tuples[tuple][vios_name]["user_res"] = [] # Liste  of resource name
+    # tuples[tuple][vios_name]["alt_disk"] = "" # String: <disk name for clonning rootvg
+    #                                                      or alternate disk for installation>
+    # tuples[tuple][vios_name]["user_res"] = [] # Liste of resource name
     # tuples[tuple][vios_name]["status"] = "" # String: status to follow installation steps
     # tuples[tuple][vios_name]["start_time"] = 0 # Integer: viosupgrade start time from epoch
     # tuples[tuple][vios_name]["loop_time"] = 0 # Integer: viosupgrade start time from epoch
@@ -763,6 +756,7 @@ if __name__ == '__main__':
             vios["status"] = READY
             vios["altinst_rootvg"] = ""
             vios["rootvg"] = ""
+            vios["alt_disk"] = ""
             vios["cluster_id"] = ""
             vios["host_name"] = ""
             vios["ip"] = ""
@@ -935,7 +929,7 @@ if __name__ == '__main__':
                     break   # vios loop
 
             force_install = False   # default value
-            alt_disk = ""
+            disks = ""
             action = ""
             mksysb = ""
             vios["user_res"] = []
@@ -1017,20 +1011,20 @@ if __name__ == '__main__':
             if msg:
                 break   # vios loop
 
-            if vios_name in alt_inst_disk.keys():
-                alt_disk = alt_inst_disk[vios_name].strip()
-            elif "all_vios" in alt_inst_disk.keys():
-                alt_disk = alt_inst_disk["all_vios"].strip()
-            if alt_disk:
-                alt_disk = alt_disk.replace(':', ' ').replace(',', ' ').strip()
-                vios["alt_inst_disk"] = alt_disk
-            if not alt_disk and action == 'altdisk':
+            if vios_name in alt_disk.keys():
+                disks = alt_disk[vios_name].strip()
+            elif "all_vios" in alt_disk.keys():
+                disks = alt_disk["all_vios"].strip()
+            if disks:
+                disks = disks.replace(':', ' ').replace(',', ' ').strip()
+                vios["alt_disk"] = disks
+            if not disks and action == 'altdisk':
                 msg = '{}: No alt_disk property is specified.'\
                     .format(vios_name)
                 break   # vios loop
-            elif not alt_disk:
+            elif not disks:
                 if not vios["altinst_rootvg"]:
-                    msg = '{}: The bosinst operation require an altinst_rootvg.'\
+                    msg = '{}: The bosinst operation requires an altinst_rootvg.'\
                             'Create one or add the alt_disk property for this node.'\
                             .format(vios_name)
                     break   # vios loop
@@ -1039,17 +1033,17 @@ if __name__ == '__main__':
 
             # Reject vios and tuple if altinst_rootvg already exists
             # and alt_disk property is specified
-            elif alt_disk and vios["altinst_rootvg"]:
+            elif disks and vios["altinst_rootvg"]:
                 msg = '{}: altinst_rootvg already exist, rename it.'.format(vios_name)
                 if action == 'bosinst':
                     msg += ' Or remove the alt_disk property.'
 
             # test if alt_disks are free.
-            # test the total size of alt_disks is enhougth for insstallation or clonne rootvg
-            elif alt_disk:
-                disks = alt_disk.split()
+            # test the total size of alt_disks is enhougth for installation or clonne rootvg
+            elif disks:
+                d_lsit = disks.split()
                 total_size = 0
-                for disk in disks:
+                for disk in d_lsit:
                     if disk in vios["free_pv"].keys():
                         total_size += vios["free_pv"][disk]
                     else:
