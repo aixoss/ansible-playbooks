@@ -22,11 +22,6 @@
 
       register: upgrade_result
 
-
-
-
-    #- debug: var=hc_result.output
-    #- debug: var=file_upgrade_result.output
-    #- debug: var=upgrade_result.output
+    - debug: var=upgrade_result
 
 

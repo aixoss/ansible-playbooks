@@ -294,7 +294,7 @@ def get_viosupgrade_status(module, vios):
     Arguments:
         module: {}
         vios: {}
-    Return: String status = DONE | RUNNING | ERROR
+    Return: String status = SUCCESS-UPGRADE | RUNNING | FAILURE-UPGRADE
     """
     global ERROR
     global RUNNING
@@ -541,7 +541,6 @@ def viosupgrade(module, tuples, upgrade_status):
                     if status == ERROR:
                         vios["status"] = ERROR
                         upgrade_status[tuple_key] = ERROR
-                        upgrade_status[tuple_key] = ERROR
                         nb_error += 1
                         break
                     if status == DONE:
@@ -552,7 +551,6 @@ def viosupgrade(module, tuples, upgrade_status):
                     # set tuple in error if TimeOut
                     if status == RUNNING and (actual_time > vios["start_time"] + TIMEOUT):
                         vios["status"] = ERROR
-                        upgrade_status[tuple_key] = ERROR
                         upgrade_status[tuple_key] = ERROR
                         break   # break vioses loop and go to next tuple
 
@@ -576,11 +574,11 @@ if __name__ == '__main__':
     NIM_NODE = {}
     CHANGED = False
     VARS = {}
-    ERROR = "ERROR"
-    READY = "READY"
+    ERROR = "UPGRADE-FAILURE"
+    READY = "READY-FOR-UPGRADE"
     RUNNING = "RUNNING"
-    DONE = "DONE"
-    REJECTED = "REJECTED"
+    DONE = "UPGRADE-SUCCESS"
+    REJECTED = "UPGRADE-REJECTED"
     nb_error = 0
 
     MODULE = AnsibleModule(
@@ -619,6 +617,8 @@ if __name__ == '__main__':
     msg = ""
     user_res = {}
     alt_disk = {}
+    VERBOSITY = MODULE._verbosity
+
     targets = MODULE.params['targets']
     actions = MODULE.params['actions']
     ios_mksysb = MODULE.params['ios_mksysb']
@@ -638,14 +638,17 @@ if __name__ == '__main__':
     # Open log file
     OUTPUT.append('Log file: {}'.format(LOGNAME))
     LOGFRMT = '[%(asctime)s] %(levelname)s: [%(funcName)s:%(thread)d] %(message)s'
-    logging.basicConfig(
-        filename='{}'.format(LOGNAME), format=LOGFRMT,
-        level=logging.DEBUG)
+    LEVEL = logging.DEBUG
+    
+    logging.basicConfig(filename='{}'.format(LOGNAME), format=LOGFRMT, level=LEVEL)
 
     logging.debug('*** START NIM VIOSUPGRADE OPERATION ***')
+    all_targets = list(set(targets))   # remove duplicates tuples
+    all_targets = [elem.replace(',', ' ').replace(':', ' ') for elem in all_targets]
+    all_targets = [re.sub(' +', ' ', elem) for elem in all_targets]
     logging.debug('VIOSUpgrade operation for tagets:{}'.format(targets))
-
-    OUTPUT.append('VIOSUpgrade operation for {}'.format(targets))
+    logging.info('VERBOSITY is set to {}'.format(VERBOSITY))
+    OUTPUT.append('VIOSUpgrade operation for {}'.format(all_targets))
     # build mksysb - spot table. spot is needed (if action = bosinst)
     mksysb_htab = get_ios_mksysb(MODULE)
     # build NIM node info (if needed)
@@ -664,15 +667,13 @@ if __name__ == '__main__':
 
     # if health check status is known remove tuple with wrong status
     # build the list of target matching nim client list
-    # remove duplicates
+    # remove duplicates vios
     # check vios connectivity and get ClusterID
     # get altinst_rootvg disk
     # remove tuples without c_rsh connectivity
     # exclude tuples with different clusterID
     # remove tuple having the same clusterID than an other tuple
     # remove tuple having unsuficient ioslevel
-    all_targets = list(set(MODULE.params['targets']))   # remove duplicates tuples
-    all_targets = [elem.replace(',', ' ').replace(':', ' ') for elem in all_targets]
     logging.debug("ALL_TARGETS = {}".format(all_targets))
     new_target_list = []
     all_vioses = []
@@ -961,7 +962,9 @@ if __name__ == '__main__':
                     .format(vios_name,  mksysb, mksysb_htab[mksysb]["ioslevel"], vios["level"])
                 break   # vios loop
             elif mksysb_htab[mksysb]["ioslevel"] == vios["level"] and not force_install:
-                vios["status"] = DONE
+                msg = '{}: the ios_mksysb level {} {} should be greater than vios level {}.'\
+                    .format(vios_name,  mksysb, mksysb_htab[mksysb]["ioslevel"], vios["level"])
+                break   # vios loop
             if vios_name in actions.keys():
                 action = actions[vios_name]
             elif "all_vios" in actions.keys():
@@ -992,9 +995,9 @@ if __name__ == '__main__':
                 break   # vios loop
             res_list = []
             if vios_name in user_res.keys():
-                res_list = user_res[vios_name].split()
+                res_list = user_res[vios_name].replace(':', ' ').replace(',', ' ').split()
             if "all_vios" in user_res.keys():
-                res_list.extend(user_res["all_vios"].split())
+                res_list.extend(user_res["all_vios"].replace(':', ' ').replace(',', ' ').split())
             res_list = list(set(res_list))
             vios["user_res"] = res_list
             for res in res_list:
@@ -1069,11 +1072,11 @@ if __name__ == '__main__':
         if msg:
             logging.warning(msg)
             OUTPUT.append(msg)
-            msg = "Then the target: <{}> will not be selected for upgrade operation"\
+            msg = "Then the \"{}\" target will not be selected for upgrade operation"\
                 .format(tuple_key)
             logging.warning(msg)
             OUTPUT.append(msg)
-            logging.debug('Rejected vios tuple: {} struct={}'.format(tuple_key, tuple))
+            logging.debug('Rejected vios tuple: {}: {}'.format(tuple_key, tuple))
             vios["status"] = REJECTED
             upgrade_status[tuple_key] = REJECTED
         else:
@@ -1096,26 +1099,34 @@ if __name__ == '__main__':
     if len(tuples.keys()) == 0:
         msg = 'All targets have been rejected. It remains no thing to do!'
         OUTPUT.append(msg)
-        MODULE.exit_json(
-            changed=False,
-            msg=msg,
-            nim_node=NIM_NODE,
-            debug_output=DEBUG_DATA,
-            output=OUTPUT,
-            status=upgrade_status)
+        if VERBOSITY == 3:
+            MODULE.exit_json(
+                changed=False,
+                msg=msg,
+                nim_node=NIM_NODE,
+                targets=MODULE.targets,
+                debug_output=DEBUG_DATA,
+                output=OUTPUT,
+                status=upgrade_status)
+        else:
+            MODULE.exit_json(
+                changed=False,
+                msg=msg,
+                output=OUTPUT,
+                status=upgrade_status)
 
     nb_error = viosupgrade(MODULE, tuples, upgrade_status)
 
     # Prints vios status for each targets
     for tuple_key in upgrade_status:
         status = upgrade_status[tuple_key]
-        msg = 'VIOSUpgrade operation on target: {} end with status: {}.'\
+        msg = 'VIOSUpgrade operation on target: "{}" end with status: {}.'\
             .format(tuple_key, status)
         OUTPUT.append(msg)
         logging.info(msg)
         if status == DONE or status == ERROR:
             for vios_name in tuple_key.split():
-                msg = 'VIOSUpgrade {} operation on {} status: {}.'\
+                msg = 'VIOSUpgrade {} operation status on "{}": {}.'\
                     .format(tuples[tuple_key][vios_name]["action"], vios_name,
                             tuples[tuple_key][vios_name]["status"])
                 logging.info(msg)
@@ -1123,7 +1134,7 @@ if __name__ == '__main__':
 
     # Prints a global result statement
     if nb_error == 0:
-        msg = 'VIOSUpgrade operation succeeded'
+        msg = 'NIM VIOSUpgrade operation completed successfully'
         OUTPUT.append(msg)
         logging.info(msg)
     else:
@@ -1135,12 +1146,22 @@ if __name__ == '__main__':
     # # Exit
     # # =========================================================================
     if nb_error == 0:
-        MODULE.exit_json(
-            changed=CHANGED,
-            msg=msg,
-            targets=MODULE.targets,
-            output=OUTPUT,
-            status=upgrade_status)
+        if VERBOSITY == 3:
+            MODULE.exit_json(
+                changed=CHANGED,
+                msg=msg,
+                nim_node=NIM_NODE,
+                targets=MODULE.targets,
+                debug_output=DEBUG_DATA,
+                output=OUTPUT,
+                status=upgrade_status)
+        else:
+            MODULE.exit_json(
+                changed=CHANGED,
+                msg=msg,
+                targets=MODULE.targets,
+                output=OUTPUT,
+                status=upgrade_status)
     else:
         MODULE.fail_json(
             changed=CHANGED,
