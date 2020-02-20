@@ -6,7 +6,7 @@
   tasks:
 
   - name: Check for, and install, system updates
-    suma_new:
+    suma:
       oslevel: 'latest'
 #     download_dir: '/usr/sys/inst.images'
       download_only: False
