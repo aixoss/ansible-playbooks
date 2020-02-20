@@ -1,6 +1,6 @@
 ---
 - name: "SUMA on AIX"
-  hosts: aix01
+  hosts: all
   gather_facts: no
 
   tasks:
