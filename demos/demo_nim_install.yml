@@ -1,6 +1,6 @@
 ---
-- name: "BOS install using mksysb image"
-  hosts: regency1c01
+- name: "NIM BOS install using mksysb image"
+  hosts: nim
   gather_facts: no
 
   tasks:

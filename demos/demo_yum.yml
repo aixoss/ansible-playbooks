@@ -1,6 +1,6 @@
 ---
 - name: "YuM Check-Update"
-  hosts: aix01 linux01
+  hosts: all
   gather_facts: yes
 
   tasks:
@@ -9,8 +9,6 @@
     yum:
       name: '*'
       state: latest
-#      exclude: kernel*
-#    when: ansible_distribution == 'CentOS'
-
+      exclude: kernel*
     register: output
   - debug: var=output

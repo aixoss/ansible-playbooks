@@ -1,5 +1,5 @@
 - name: "FLRTVC on AIX playbook"
-  hosts: quimby01
+  hosts: all
   gather_facts: no
   tasks:
     - name: "FLRTVC"
